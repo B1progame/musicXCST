@@ -1,20 +1,43 @@
 # musicXCST
 
-`musicXCST` is a Fabric mod for Minecraft `26.1.2` focused on custom writable music discs. The first working version adds a command-driven workflow for registering server-safe music metadata and writing that metadata onto custom CD items.
+`musicXCST` is a Fabric mod for Minecraft `26.1.2` that adds custom writable music CDs. The current first version is deliberately small: players craft a blank `Blueprint CD`, register server-safe music metadata with a command, and write that metadata onto the disc item.
 
-## Current Scope
+## First-Version Scope
 
-This first version is intentionally limited to the custom CD system:
+Included now:
 
-- blank writable CD item
-- command-based CD creation with `/cstmusic`
-- server-side metadata index and config
-- ownership and admin management rules
-- invalid or deleted disc handling
+- blank writable `Blueprint CD` item
+- crafting recipe for the blank disc
+- `/cstmusic` command tree
+- server-side metadata index
+- ownership rules
+- admin management commands
+- invalid / deleted disc handling
+- config file for quotas, extensions, and import folder rules
 
-The future CD Writer block, GUI, local upload flow, and playback pipeline are not part of this initial implementation.
+Not included yet:
 
-## Planned Command Root
+- CD Writer block
+- CD Writer GUI
+- client upload flow
+- custom playback engine
+- directional or synchronized multiplayer audio
+
+## Crafting the Blank CD
+
+Recipe shape:
+
+```text
+  iron nugget
+iron nugget + blue stained glass pane + iron nugget
+  iron nugget
+```
+
+Crafting result:
+
+- `Blueprint CD`
+
+## Command Usage
 
 All commands use a single root:
 
@@ -22,7 +45,7 @@ All commands use a single root:
 /cstmusic
 ```
 
-Planned subcommands for the first version:
+Available commands:
 
 - `/cstmusic help`
 - `/cstmusic create <name> <hexColor> <location>`
@@ -37,53 +60,133 @@ Planned subcommands for the first version:
 - `/cstmusic admin reload`
 - `/cstmusic admin repairindex`
 
-## Blank CD Recipe
+## Creating a Written CD
 
-The blank disc recipe is planned around:
+Current workflow:
 
-- iron nuggets
-- blue glass pane
+1. Craft a blank `Blueprint CD`.
+2. Hold the blank disc in the selected hotbar slot.
+3. Put the music file inside the configured server import folder.
+4. Run:
 
-The exact recipe JSON is part of the first implementation stage.
+```text
+/cstmusic create "Song Name" #00AAFF folder/song.ogg
+```
+
+Behavior notes:
+
+- the command requires a blank `Blueprint CD`
+- a stack of blank discs will consume one and create one written disc
+- the written disc stores a music ID, owner, color, display name, status, design placeholder, and schema version
 
 ## Ownership Rules
 
-Each registered music entry is intended to store:
+Each music entry stores:
 
-- a unique music ID
+- unique music ID
 - owner UUID
-- owner name when safely available
-- safe relative import path or internal stored name
+- owner name
+- safe relative import path
+- file metadata
 
-Normal players may manage only their own registered music. Admins may manage all entries.
+Rules:
 
-## Storage and Safety
+- normal players can list, inspect, create, and delete only their own entries
+- admins can manage all entries
+- written discs preserve the original owner metadata
+- obtaining another player's disc does not transfer ownership of the underlying music entry
 
-The mod is designed to keep server music imports constrained to configured safe folders. Absolute client paths are not intended to be exposed in public item metadata, tooltips, or logs.
+## Storage and Config
 
-Planned config includes:
+The mod writes:
 
+- config: `config/musicxcst.json`
+- metadata index: `<world>/data/musicxcst/music-index.json`
+- import folder: `<world>/music-import/` by default
+
+Config fields include:
+
+- max file size per entry
+- max storage per player
+- max total server storage
 - allowed file extensions
-- max file size
-- per-player quota
-- total server quota
-- import/storage folder paths
-- deleted-entry behavior
-- future playback ownership options
+- server import folder
+- soft delete toggle
+- future playback ownership toggles
+- debug logging
 
-## Build
+Allowed extensions in the first version:
 
-This repository currently contains the Fabric Loom project files for Minecraft `26.1.2`. A proper wrapper script and the first working gameplay implementation are being added as part of the initial setup pass.
+- `mp3`
+- `mp4`
+- `wav`
+- `ogg`
+- `flac`
+- `m4a`
+- `aac`
+- `webm`
 
-Expected local build command once wrapper setup is restored:
+## Deleted and Missing Music
+
+If an entry is deleted or the file goes missing:
+
+- metadata stays in the index
+- discs do not crash
+- the disc name becomes invalid/red
+- tooltips warn that the audio is missing, deleted, or invalid
+- future playback can fail safely against the stored status
+
+## Safety Rules
+
+The first version only accepts server-side import paths inside the configured import folder.
+
+Current safety behavior:
+
+- absolute paths are rejected
+- path traversal is rejected
+- only configured extensions are accepted
+- file size quotas are enforced
+- only safe relative paths are stored
+- private local client paths are not written onto the item
+
+## Known Limitations
+
+- no client upload flow yet
+- no local singleplayer file picker yet
+- no actual audio playback yet
+- only one disc item model is used right now; invalid state is communicated through name, tooltip, and item bar color
+- runtime behavior was build-verified, but not exercised through a live in-game command session in this repository
+
+## Future CD Writer
+
+The future workstation plan is documented in [docs/future-cd-writer-plan.md](docs/future-cd-writer-plan.md).
+
+Planned later:
+
+- CD Writer block
+- note-block based recipe
+- DJ-style write GUI
+- client upload and conversion pipeline
+- playback and synchronization features
+
+## Building From Source
+
+Requirements:
+
+- Java `25`
+- Minecraft `26.1.2`
+
+Build:
 
 ```powershell
 .\gradlew.bat build
 ```
 
-## Repository Status
+Output jars are written to `build/libs/`.
 
-The local folder is already a Git repository, but GitHub publication is currently blocked because the installed `gh` client is present with an invalid authentication token. To publish later after re-authentication:
+## GitHub Notes
+
+The local folder is already a Git repository. GitHub publication is currently blocked because the installed `gh` client has an invalid authentication token. After re-authentication, the repository can be created and pushed with:
 
 ```powershell
 gh auth login -h github.com
@@ -93,4 +196,4 @@ gh repo edit --description "Fabric Minecraft mod for custom writable music CDs" 
 
 ## License
 
-Current project license metadata is `All-Rights-Reserved`, matching the existing repository files unless changed later.
+Current project license metadata is `All-Rights-Reserved`, matching the existing repository files.

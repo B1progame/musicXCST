@@ -3,8 +3,10 @@
   "id": "musicxcst",
   "version": "${version}",
   "name": "musicXCST",
-  "description": "",
-  "authors": [],
+  "description": "Custom writable music CDs for Minecraft 26.1.2 on Fabric.",
+  "authors": [
+    "B1progame"
+  ],
   "contact": {},
   "license": "All-Rights-Reserved",
   "icon": "assets/musicxcst/icon.png",

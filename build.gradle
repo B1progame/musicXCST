@@ -36,7 +36,7 @@ repositories {
 }
 
 dependencies {
-    // To change the versions see the gradle.properties file
+    // Minecraft 26.1.x uses unobfuscated Mojang names directly via net.fabricmc.fabric-loom.
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
@@ -80,7 +80,7 @@ java {
 }
 
 jar {
-    from("LICENSE") {
+    from("LICENSE.txt") {
         rename { "${it}_${project.archives_base_name}" }
     }
 }

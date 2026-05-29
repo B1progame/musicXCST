@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " n ",
+    "ngn",
+    " n "
+  ],
+  "key": {
+    "n": {
+      "item": "minecraft:iron_nugget"
+    },
+    "g": {
+      "item": "minecraft:blue_stained_glass_pane"
+    }
+  },
+  "result": {
+    "id": "musicxcst:blueprint_cd",
+    "count": 1
+  }
+}
