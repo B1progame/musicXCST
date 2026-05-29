@@ -154,7 +154,9 @@ Current safety behavior:
 - no client upload flow yet
 - no local singleplayer file picker yet
 - no actual audio playback yet
-- only one disc item model is used right now; invalid state is communicated through name, tooltip, and item bar color
+- only one disc item model is used right now; written discs are still `Blueprint CD` items with metadata
+- custom disc color is stored as real RGB metadata and reflected in name/item bar color for now
+- invalid state is communicated through name, tooltip, item bar color, and the red invalid placeholder texture reserved for future model overrides
 - runtime behavior was build-verified, but not exercised through a live in-game command session in this repository
 
 ## Future CD Writer
@@ -166,6 +168,7 @@ Planned later:
 - CD Writer block
 - note-block based recipe
 - DJ-style write GUI
+- disc design selector with default `16x16` designs and possible custom designs up to `128x128`
 - client upload and conversion pipeline
 - playback and synchronization features
 
