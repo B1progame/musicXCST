@@ -12,6 +12,7 @@ Included now:
 - server-side metadata index
 - ownership rules
 - admin management commands
+- jukebox insertion/ejection support with placeholder vanilla playback
 - invalid / deleted disc handling
 - config file for quotas, extensions, and import folder rules
 
@@ -20,7 +21,7 @@ Not included yet:
 - CD Writer block
 - CD Writer GUI
 - client upload flow
-- custom playback engine
+- custom imported-audio playback engine
 - directional or synchronized multiplayer audio
 
 ## Crafting the Blank CD
@@ -147,6 +148,10 @@ If an entry is deleted or the file goes missing:
 - tooltips warn that the audio is missing, deleted, or invalid
 - future playback can fail safely against the stored status
 
+## Jukebox Behavior
+
+`Blueprint CD` items can be inserted into and removed from vanilla jukeboxes. In this first version, jukebox playback uses a vanilla placeholder song because the custom imported-audio playback engine is not implemented yet.
+
 ## Safety Rules
 
 The first version accepts server-side import paths inside the configured import folder. It can also import quoted absolute paths in singleplayer or integrated-server worlds.
@@ -169,6 +174,7 @@ On a dedicated multiplayer server, a command cannot read a file from a player's 
 - no client upload flow yet
 - no local singleplayer file picker yet
 - no actual audio playback yet
+- jukebox playback uses a vanilla placeholder song
 - only one disc item model is used right now; written discs are still `Blueprint CD` items with metadata
 - custom disc color is stored as real RGB metadata and reflected in name/item bar color for now
 - invalid state is communicated through name, tooltip, item bar color, and the red invalid placeholder texture reserved for future model overrides

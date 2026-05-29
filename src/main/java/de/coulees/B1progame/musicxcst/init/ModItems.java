@@ -8,6 +8,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.JukeboxSongs;
 import net.minecraft.world.item.Rarity;
 
 public final class ModItems {
@@ -15,7 +16,8 @@ public final class ModItems {
     public static final Item BLUEPRINT_CD = register(BLUEPRINT_CD_KEY, new BlueprintCdItem(new Item.Properties()
             .setId(BLUEPRINT_CD_KEY)
             .stacksTo(16)
-            .rarity(Rarity.UNCOMMON)));
+            .rarity(Rarity.UNCOMMON)
+            .jukeboxPlayable(JukeboxSongs.CAT)));
 
     private ModItems() {
     }
