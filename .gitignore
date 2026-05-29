@@ -1,0 +1,52 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradle
+.gradle/
+build/
+out/
+
+# IntelliJ / JetBrains
+.idea/
+*.iml
+.idea_modules/
+
+# Runtime / generated game state
+run/
+logs/
+crash-reports/
+saves/
+screenshots/
+resourcepacks/
+shaderpacks/
+
+# Local mod data and private audio imports
+music-import/
+music-storage/
+music-cache/
+music-temp/
+music-uploads/
+music-downloads/
+*.local.json
+*.local.properties
+local.properties
+
+# Local docs and design scratch files
+notes/
+private/
+*.bbmodel
+*.blend1
+*.tmp
+*.bak
+
+# Secrets / tokens
+.env
+.env.*
+*.secret
+*.token
+secrets/
+
+# Java crash logs
+hs_err_pid*
+replay_pid*
