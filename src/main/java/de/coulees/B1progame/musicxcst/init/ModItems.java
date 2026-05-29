@@ -19,7 +19,7 @@ public final class ModItems {
     );
     public static final Item BLUEPRINT_CD = register(BLUEPRINT_CD_KEY, new BlueprintCdItem(new Item.Properties()
             .setId(BLUEPRINT_CD_KEY)
-            .stacksTo(16)
+            .stacksTo(1)
             .rarity(Rarity.UNCOMMON)
             .jukeboxPlayable(BLUEPRINT_CD_SILENCE_SONG)));
 
