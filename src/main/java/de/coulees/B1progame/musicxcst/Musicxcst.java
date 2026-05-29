@@ -2,6 +2,7 @@ package de.coulees.B1progame.musicxcst;
 
 import de.coulees.B1progame.musicxcst.command.CstMusicCommands;
 import de.coulees.B1progame.musicxcst.init.ModItems;
+import de.coulees.B1progame.musicxcst.init.ModSounds;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import de.coulees.B1progame.musicxcst.service.MusicLibraryService;
@@ -26,6 +27,7 @@ public final class Musicxcst implements ModInitializer {
     public void onInitialize() {
         PayloadTypeRegistry.clientboundPlay().registerLarge(JukeboxStartPayload.TYPE, JukeboxStartPayload.CODEC, 32 * 1024 * 1024);
         PayloadTypeRegistry.clientboundPlay().register(JukeboxStopPayload.TYPE, JukeboxStopPayload.CODEC);
+        ModSounds.register();
         ModItems.register();
         CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
                 .register(entries -> entries.accept(ModItems.BLUEPRINT_CD));

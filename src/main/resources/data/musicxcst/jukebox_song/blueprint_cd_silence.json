@@ -4,5 +4,5 @@
     "translate": "jukebox_song.musicxcst.blueprint_cd_silence"
   },
   "length_in_seconds": 1.0,
-  "sound_event": "minecraft:empty"
+  "sound_event": "musicxcst:blueprint_cd_silence"
 }
