@@ -48,6 +48,7 @@ Future PNG mockups can be added later once the command-based first version is st
 Later versions should add:
 
 - client upload flow for integrated and dedicated servers
+- direct client-to-server upload for friends on multiplayer servers, because server commands cannot read files from a player's private computer
 - server-side import validation
 - background conversion pipeline where needed
 - stereo playback support

@@ -84,7 +84,7 @@ public final class CstMusicCommands {
 
     private static int create(CommandSourceStack source, String name, String hexColor, String location) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        String result = Musicxcst.LIBRARY.createDiscForPlayer(player, name, hexColor, location);
+        String result = Musicxcst.LIBRARY.createDiscForPlayer(source, player, name, hexColor, location);
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }

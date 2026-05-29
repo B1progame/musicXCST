@@ -73,6 +73,14 @@ Current workflow:
 /cstmusic create "Song Name" #00AAFF folder/song.ogg
 ```
 
+In singleplayer or an integrated server, local absolute paths can also be imported:
+
+```text
+/cstmusic create "Song Name" #00AAFF "C:\Users\Name\Music\song.mp3"
+```
+
+The file is copied into the world import folder and the private absolute path is not stored on the disc or in the metadata index.
+
 Behavior notes:
 
 - the command requires a blank `Blueprint CD`
@@ -103,6 +111,7 @@ The mod writes:
 - config: `config/musicxcst.json`
 - metadata index: `<world>/data/musicxcst/music-index.json`
 - import folder: `<world>/music-import/` by default
+- absolute import copy folder: `<world>/music-import/imported/` by default
 
 Config fields include:
 
@@ -111,6 +120,8 @@ Config fields include:
 - max total server storage
 - allowed file extensions
 - server import folder
+- singleplayer absolute path import toggle
+- admin absolute server path import toggle
 - soft delete toggle
 - future playback ownership toggles
 - debug logging
@@ -138,16 +149,20 @@ If an entry is deleted or the file goes missing:
 
 ## Safety Rules
 
-The first version only accepts server-side import paths inside the configured import folder.
+The first version accepts server-side import paths inside the configured import folder. It can also import quoted absolute paths in singleplayer or integrated-server worlds.
 
 Current safety behavior:
 
-- absolute paths are rejected
+- singleplayer absolute paths are copied into the world import folder
+- dedicated-server absolute paths are rejected by default
+- dedicated servers can enable admin-only absolute server paths with `allowAdminAbsoluteServerPaths`
 - path traversal is rejected
 - only configured extensions are accepted
 - file size quotas are enforced
 - only safe relative paths are stored
 - private local client paths are not written onto the item
+
+On a dedicated multiplayer server, a command cannot read a file from a player's computer. The file must already exist on the server, be placed into the import folder, or be uploaded later through the planned CD Writer upload flow.
 
 ## Known Limitations
 

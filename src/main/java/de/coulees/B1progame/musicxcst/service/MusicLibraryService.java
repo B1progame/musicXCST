@@ -26,6 +26,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -90,7 +91,7 @@ public final class MusicLibraryService {
         return "musicXCST metadata index repaired. Entries: " + entries.size();
     }
 
-    public String createDiscForPlayer(ServerPlayer player, String requestedName, String requestedColor, String requestedLocation) {
+    public String createDiscForPlayer(CommandSourceStack source, ServerPlayer player, String requestedName, String requestedColor, String requestedLocation) {
         ensureServer();
         String sanitizedName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
@@ -106,16 +107,18 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("The selected Blueprint CD is already written.");
         }
 
-        Path resolved = resolveImportPath(requestedLocation);
+        String musicId = UUID.randomUUID().toString().replace("-", "");
+        ImportedMusicFile importedFile = resolveMusicFile(source, player, requestedLocation, musicId);
+        Path resolved = importedFile.path();
         long fileSize = safeFileSize(resolved);
         validateFile(resolved, fileSize);
         validateQuota(player.getUUID(), fileSize);
 
         MusicEntry entry = new MusicEntry();
-        entry.musicId = UUID.randomUUID().toString().replace("-", "");
+        entry.musicId = musicId;
         entry.displayName = sanitizedName;
-        entry.originalFileName = resolved.getFileName().toString();
-        entry.safeRelativePath = importRoot.relativize(resolved).toString().replace('\\', '/');
+        entry.originalFileName = importedFile.originalFileName();
+        entry.safeRelativePath = importedFile.safeRelativePath();
         entry.ownerUuid = player.getUUID().toString();
         entry.ownerName = player.getName().getString();
         entry.createdAtEpochMillis = Instant.now().toEpochMilli();
@@ -379,13 +382,15 @@ public final class MusicLibraryService {
         }
     }
 
-    private Path resolveImportPath(String requestedLocation) {
+    private ImportedMusicFile resolveMusicFile(CommandSourceStack source, ServerPlayer player, String requestedLocation, String musicId) {
         String normalizedInput = requestedLocation.trim().replace('\\', '/');
         if (normalizedInput.isBlank()) {
             throw new IllegalArgumentException("Music location cannot be empty.");
         }
-        if (Path.of(normalizedInput).isAbsolute()) {
-            throw new IllegalArgumentException("Absolute paths are not allowed in this version. Use a path inside the server import folder.");
+
+        Path requestedPath = Path.of(requestedLocation.trim());
+        if (requestedPath.isAbsolute()) {
+            return importAbsolutePath(source, player, requestedPath, musicId);
         }
         if (normalizedInput.contains("..")) {
             throw new IllegalArgumentException("Path traversal is not allowed.");
@@ -395,7 +400,54 @@ public final class MusicLibraryService {
         if (!resolved.startsWith(importRoot)) {
             throw new IllegalArgumentException("Resolved path escapes the server import folder.");
         }
-        return resolved;
+        return new ImportedMusicFile(resolved, resolved.getFileName().toString(), importRoot.relativize(resolved).toString().replace('\\', '/'));
+    }
+
+    private ImportedMusicFile importAbsolutePath(CommandSourceStack source, ServerPlayer player, Path requestedPath, String musicId) {
+        boolean allowedSingleplayer = server.isSingleplayer() && config.allowSingleplayerAbsolutePaths;
+        boolean allowedAdminServerPath = server.isDedicatedServer() && config.allowAdminAbsoluteServerPaths && isAdmin(source);
+        if (!allowedSingleplayer && !allowedAdminServerPath) {
+            throw new IllegalArgumentException("Absolute paths are only allowed in singleplayer by default. On dedicated servers, copy the file into music-import or enable admin absolute server paths in config.");
+        }
+
+        Path sourcePath = requestedPath.normalize();
+        long fileSize = safeFileSize(sourcePath);
+        validateFile(sourcePath, fileSize);
+
+        String safeFileName = sanitizeFileName(sourcePath.getFileName().toString());
+        Path ownerFolder = importRoot.resolve(config.absoluteImportSubfolder).resolve(player.getUUID().toString()).normalize();
+        if (!ownerFolder.startsWith(importRoot)) {
+            throw new IllegalArgumentException("Absolute import folder escapes the server import folder.");
+        }
+
+        Path destination = ownerFolder.resolve(musicId + "-" + safeFileName).normalize();
+        if (!destination.startsWith(importRoot)) {
+            throw new IllegalArgumentException("Absolute import destination escapes the server import folder.");
+        }
+
+        try {
+            Files.createDirectories(ownerFolder);
+            Files.copy(sourcePath, destination, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to import music file. The server can only read files on the server computer.", exception);
+        }
+
+        return new ImportedMusicFile(destination, safeFileName, importRoot.relativize(destination).toString().replace('\\', '/'));
+    }
+
+    private String sanitizeFileName(String input) {
+        String sanitized = input == null ? "music" : input.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]+", "_").trim();
+        if (sanitized.isBlank()) {
+            sanitized = "music";
+        }
+        if (sanitized.length() > 80) {
+            int dot = sanitized.lastIndexOf('.');
+            String extension = dot >= 0 ? sanitized.substring(dot) : "";
+            String base = dot >= 0 ? sanitized.substring(0, dot) : sanitized;
+            int maxBaseLength = Math.max(1, 80 - extension.length());
+            sanitized = base.substring(0, Math.min(base.length(), maxBaseLength)) + extension;
+        }
+        return sanitized;
     }
 
     private long safeFileSize(Path path) {
@@ -492,5 +544,8 @@ public final class MusicLibraryService {
     private boolean isAdmin(CommandSourceStack source) {
         return source.permissions() instanceof LevelBasedPermissionSet levelBased
                 && levelBased.level().isEqualOrHigherThan(PermissionLevel.ADMINS);
+    }
+
+    private record ImportedMusicFile(Path path, String originalFileName, String safeRelativePath) {
     }
 }
