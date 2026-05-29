@@ -35,6 +35,7 @@ local.properties
 # Local docs and design scratch files
 notes/
 private/
+temp-saves/
 *.bbmodel
 *.blend1
 *.tmp
