@@ -10,15 +10,23 @@ import de.coulees.B1progame.musicxcst.data.MusicIndexFile;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
 import de.coulees.B1progame.musicxcst.init.ModItems;
+import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
+import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.Vec3;
+import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -208,6 +216,65 @@ public final class MusicLibraryService {
             accumulate(stats, entry);
         }
         return stats;
+    }
+
+    public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
+        if (!(level instanceof ServerLevel serverLevel) || stack.getItem() != ModItems.BLUEPRINT_CD) {
+            return;
+        }
+
+        DiscData discData = DiscData.fromStack(stack);
+        if (discData == null || MusicStatus.isInvalidLike(discData.status)) {
+            stopJukeboxPlayback(level, pos);
+            return;
+        }
+
+        MusicEntry entry = entries.get(discData.musicId);
+        if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+            stopJukeboxPlayback(level, pos);
+            return;
+        }
+
+        Path file = importRoot.resolve(entry.safeRelativePath).normalize();
+        if (!file.startsWith(importRoot) || !Files.isRegularFile(file)) {
+            stopJukeboxPlayback(level, pos);
+            return;
+        }
+
+        if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+            Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played yet: only .ogg files are supported by the first custom jukebox pipeline.", entry.displayName);
+            stopJukeboxPlayback(level, pos);
+            return;
+        }
+
+        byte[] audioBytes;
+        try {
+            audioBytes = Files.readAllBytes(file);
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.warn("Failed to read Blueprint CD audio file {}", file.getFileName(), exception);
+            stopJukeboxPlayback(level, pos);
+            return;
+        }
+
+        JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
+        for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 96.0D)) {
+            if (ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
+                ServerPlayNetworking.send(player, payload);
+            }
+        }
+    }
+
+    public void stopJukeboxPlayback(Level level, BlockPos pos) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        JukeboxStopPayload payload = new JukeboxStopPayload(pos);
+        for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 128.0D)) {
+            if (ServerPlayNetworking.canSend(player, JukeboxStopPayload.TYPE)) {
+                ServerPlayNetworking.send(player, payload);
+            }
+        }
     }
 
     private void accumulate(StorageStats stats, MusicEntry entry) {

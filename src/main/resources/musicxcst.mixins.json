@@ -4,6 +4,7 @@
   "package": "de.coulees.B1progame.musicxcst.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "JukeboxBlockEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1

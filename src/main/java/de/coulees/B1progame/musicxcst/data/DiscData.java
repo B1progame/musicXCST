@@ -7,6 +7,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.DyedItemColor;
 
 public final class DiscData {
     public String musicId;
@@ -68,6 +69,7 @@ public final class DiscData {
 
         CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.put(Musicxcst.DISC_DATA_KEY, tag));
         stack.set(DataComponents.CUSTOM_NAME, buildHoverName(data));
+        stack.set(DataComponents.DYED_COLOR, new DyedItemColor(renderColor(data)));
     }
 
     public static Component buildHoverName(DiscData data) {
@@ -97,5 +99,14 @@ public final class DiscData {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private static int renderColor(DiscData data) {
+        if (MusicStatus.isInvalidLike(data.status)) {
+            return 0xC93A3A;
+        }
+
+        Integer color = parseRgb(data.hexColor);
+        return color != null ? color : 0x2C6DCC;
     }
 }

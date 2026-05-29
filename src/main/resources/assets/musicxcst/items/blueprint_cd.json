@@ -1,6 +1,12 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "musicxcst:item/blueprint_cd"
+    "model": "musicxcst:item/blueprint_cd",
+    "tints": [
+      {
+        "type": "minecraft:dye",
+        "default": 2911692
+      }
+    ]
   }
 }

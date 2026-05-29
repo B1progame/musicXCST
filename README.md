@@ -12,7 +12,8 @@ Included now:
 - server-side metadata index
 - ownership rules
 - admin management commands
-- jukebox insertion/ejection support with placeholder vanilla playback
+- jukebox insertion/ejection support
+- first custom jukebox playback pipeline for `.ogg` files
 - invalid / deleted disc handling
 - config file for quotas, extensions, and import folder rules
 
@@ -21,7 +22,7 @@ Not included yet:
 - CD Writer block
 - CD Writer GUI
 - client upload flow
-- custom imported-audio playback engine
+- MP3 conversion / decoding
 - directional or synchronized multiplayer audio
 
 ## Crafting the Blank CD
@@ -150,7 +151,13 @@ If an entry is deleted or the file goes missing:
 
 ## Jukebox Behavior
 
-`Blueprint CD` items can be inserted into and removed from vanilla jukeboxes. In this first version, jukebox playback uses a vanilla placeholder song because the custom imported-audio playback engine is not implemented yet.
+`Blueprint CD` items can be inserted into and removed from vanilla jukeboxes.
+
+Current custom playback support:
+
+- `.ogg` files are sent from the server to nearby clients and played positionally from the jukebox
+- vanilla jukebox playback is pointed at a silent placeholder song so it does not fight the custom audio
+- unsupported formats such as `.mp3` can still be registered as metadata, but they do not play yet without a future converter or decoder
 
 ## Safety Rules
 
@@ -173,8 +180,8 @@ On a dedicated multiplayer server, a command cannot read a file from a player's 
 
 - no client upload flow yet
 - no local singleplayer file picker yet
-- no actual audio playback yet
-- jukebox playback uses a vanilla placeholder song
+- custom jukebox playback currently supports `.ogg` first
+- MP3 and other formats need conversion or decoder support before playback
 - only one disc item model is used right now; written discs are still `Blueprint CD` items with metadata
 - custom disc color is stored as real RGB metadata and reflected in name/item bar color for now
 - invalid state is communicated through name, tooltip, item bar color, and the red invalid placeholder texture reserved for future model overrides
