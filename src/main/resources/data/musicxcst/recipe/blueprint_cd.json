@@ -6,12 +6,8 @@
     " n "
   ],
   "key": {
-    "n": {
-      "item": "minecraft:iron_nugget"
-    },
-    "g": {
-      "item": "minecraft:blue_stained_glass_pane"
-    }
+    "n": "minecraft:iron_nugget",
+    "g": "minecraft:blue_stained_glass_pane"
   },
   "result": {
     "id": "musicxcst:blueprint_cd",

@@ -28,12 +28,12 @@ public final class CstMusicCommands {
                 .then(Commands.literal("help").executes(ctx -> help(ctx.getSource())))
                 .then(Commands.literal("create")
                         .then(Commands.argument("name", StringArgumentType.string())
-                                .then(Commands.argument("hexColor", HexColorArgument.hexColor())
+                                .then(Commands.argument("hexColor", StringArgumentType.string())
                                         .then(Commands.argument("location", StringArgumentType.greedyString())
                                                 .executes(ctx -> create(
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "name"),
-                                                        HexColorArgument.getHexColor(ctx, "hexColor"),
+                                                        StringArgumentType.getString(ctx, "hexColor"),
                                                         StringArgumentType.getString(ctx, "location")
                                                 ))))))
                 .then(Commands.literal("list")
