@@ -383,12 +383,13 @@ public final class MusicLibraryService {
     }
 
     private ImportedMusicFile resolveMusicFile(CommandSourceStack source, ServerPlayer player, String requestedLocation, String musicId) {
-        String normalizedInput = requestedLocation.trim().replace('\\', '/');
+        String cleanedLocation = stripWrappingQuotes(requestedLocation.trim());
+        String normalizedInput = cleanedLocation.replace('\\', '/');
         if (normalizedInput.isBlank()) {
             throw new IllegalArgumentException("Music location cannot be empty.");
         }
 
-        Path requestedPath = Path.of(requestedLocation.trim());
+        Path requestedPath = Path.of(cleanedLocation);
         if (requestedPath.isAbsolute()) {
             return importAbsolutePath(source, player, requestedPath, musicId);
         }
@@ -401,6 +402,13 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Resolved path escapes the server import folder.");
         }
         return new ImportedMusicFile(resolved, resolved.getFileName().toString(), importRoot.relativize(resolved).toString().replace('\\', '/'));
+    }
+
+    private String stripWrappingQuotes(String input) {
+        if (input.length() >= 2 && input.startsWith("\"") && input.endsWith("\"")) {
+            return input.substring(1, input.length() - 1);
+        }
+        return input;
     }
 
     private ImportedMusicFile importAbsolutePath(CommandSourceStack source, ServerPlayer player, Path requestedPath, String musicId) {

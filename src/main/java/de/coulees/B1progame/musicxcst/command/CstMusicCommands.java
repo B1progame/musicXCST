@@ -15,6 +15,7 @@ import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
+import java.util.Locale;
 
 public final class CstMusicCommands {
     private static final int PAGE_SIZE = 8;
@@ -28,14 +29,12 @@ public final class CstMusicCommands {
                 .then(Commands.literal("help").executes(ctx -> help(ctx.getSource())))
                 .then(Commands.literal("create")
                         .then(Commands.argument("name", StringArgumentType.string())
-                                .then(Commands.argument("hexColor", StringArgumentType.string())
-                                        .then(Commands.argument("location", StringArgumentType.greedyString())
-                                                .executes(ctx -> create(
-                                                        ctx.getSource(),
-                                                        StringArgumentType.getString(ctx, "name"),
-                                                        StringArgumentType.getString(ctx, "hexColor"),
-                                                        StringArgumentType.getString(ctx, "location")
-                                                ))))))
+                                .then(Commands.argument("colorAndLocation", StringArgumentType.greedyString())
+                                        .executes(ctx -> create(
+                                                ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "name"),
+                                                StringArgumentType.getString(ctx, "colorAndLocation")
+                                        )))))
                 .then(Commands.literal("list")
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
@@ -82,11 +81,41 @@ public final class CstMusicCommands {
         return 1;
     }
 
-    private static int create(CommandSourceStack source, String name, String hexColor, String location) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int create(CommandSourceStack source, String name, String colorAndLocation) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        String result = Musicxcst.LIBRARY.createDiscForPlayer(source, player, name, hexColor, location);
+        CreateArguments arguments = parseCreateTail(colorAndLocation);
+        String result = Musicxcst.LIBRARY.createDiscForPlayer(source, player, name, arguments.hexColor(), arguments.location());
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
+    }
+
+    private static CreateArguments parseCreateTail(String input) {
+        String trimmed = input == null ? "" : input.trim();
+        int split = findFirstWhitespace(trimmed);
+        if (split <= 0 || split >= trimmed.length() - 1) {
+            throw new IllegalArgumentException("Usage: /cstmusic create \"Song Name\" #RRGGBB \"path/to/song.mp3\"");
+        }
+
+        String color = trimmed.substring(0, split).trim();
+        String location = trimmed.substring(split + 1).trim();
+        if (!isHexColor(color)) {
+            throw new IllegalArgumentException("Invalid hex color. Use RRGGBB or #RRGGBB.");
+        }
+        return new CreateArguments(color, location);
+    }
+
+    private static int findFirstWhitespace(String input) {
+        for (int index = 0; index < input.length(); index++) {
+            if (Character.isWhitespace(input.charAt(index))) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isHexColor(String input) {
+        String normalized = input.startsWith("#") ? input.substring(1) : input;
+        return normalized.toLowerCase(Locale.ROOT).matches("[0-9a-f]{6}");
     }
 
     private static int listOwn(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -179,5 +208,8 @@ public final class CstMusicCommands {
     private static boolean isAdmin(CommandSourceStack source) {
         return source.permissions() instanceof LevelBasedPermissionSet levelBased
                 && levelBased.level().isEqualOrHigherThan(PermissionLevel.ADMINS);
+    }
+
+    private record CreateArguments(String hexColor, String location) {
     }
 }
