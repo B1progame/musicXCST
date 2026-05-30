@@ -27,6 +27,13 @@ public abstract class JukeboxBlockEntityMixin extends BlockEntity {
         }
     }
 
+    @Inject(method = "tick", at = @At("TAIL"))
+    private static void musicxcst$syncLoadedCustomPlayback(Level level, BlockPos pos, BlockState state, JukeboxBlockEntity blockEntity, CallbackInfo ci) {
+        if (!level.isClientSide() && level.getGameTime() % 20L == 0L) {
+            Musicxcst.LIBRARY.startJukeboxPlayback(level, pos, blockEntity.getTheItem());
+        }
+    }
+
     @Inject(method = "popOutTheItem", at = @At("HEAD"))
     private void musicxcst$stopCustomPlaybackOnPop(CallbackInfo ci) {
         Level level = getLevel();

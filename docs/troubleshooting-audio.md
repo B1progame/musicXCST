@@ -2,7 +2,11 @@
 
 ## FFmpeg Missing
 
-If importing an MP3 or other non-OGG file fails with an FFmpeg message, install FFmpeg and set `ffmpegPath` in `config/musicxcst.json`.
+If importing an MP3 or other non-OGG file fails with an FFmpeg message, make sure the server has one of these:
+
+- a working explicit `ffmpegPath` in `config/musicxcst.json`
+- a bundled FFmpeg binary inside the mod jar for the server platform
+- `ffmpeg` available on PATH
 
 Install it on the server or the singleplayer/integrated host, not on every multiplayer client:
 

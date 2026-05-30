@@ -18,7 +18,7 @@ public final class BlueprintCdItem extends Item {
 
     @Override
     public boolean isBarVisible(ItemStack stack) {
-        return DiscData.fromStack(stack) != null;
+        return false;
     }
 
     @Override

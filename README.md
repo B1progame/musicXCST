@@ -97,9 +97,23 @@ Supported input extensions:
 - `aac`
 - `webm`
 
-Non-OGG files require FFmpeg. Configure `ffmpegPath` in `config/musicxcst.json` if `ffmpeg` is not on the server PATH. OGG files can be copied into normalized storage without conversion.
+Non-OGG files require FFmpeg. The server looks for FFmpeg in this order:
 
-musicXCST does not install FFmpeg automatically. FFmpeg should be installed on the machine running the Minecraft server or integrated singleplayer server. Normal multiplayer clients do not need FFmpeg for playback.
+1. explicit `ffmpegPath` in `config/musicxcst.json`, when it is not blank and not the default `ffmpeg`
+2. a bundled FFmpeg binary inside the mod jar
+3. `ffmpeg` on the server PATH
+
+Bundled binaries should be packaged at one of these resource paths:
+
+- `musicxcst/ffmpeg/windows-x86_64/ffmpeg.exe`
+- `musicxcst/ffmpeg/linux-x86_64/ffmpeg`
+- `musicxcst/ffmpeg/linux-aarch64/ffmpeg`
+- `musicxcst/ffmpeg/macos-x86_64/ffmpeg`
+- `musicxcst/ffmpeg/macos-aarch64/ffmpeg`
+
+At runtime, musicXCST extracts the matching bundled binary to `config/musicxcst/ffmpeg/<platform>/` on the server and runs it from there. OGG files can still be copied into normalized storage without conversion.
+
+Normal multiplayer clients do not need FFmpeg for playback.
 
 Common install commands:
 
@@ -129,7 +143,7 @@ Check the server can see it:
 ffmpeg -version
 ```
 
-If the command is not globally available, set `ffmpegPath` to the full executable path, for example `C:\ffmpeg\bin\ffmpeg.exe`.
+If the command is not globally available and the mod jar does not include a bundled binary for the server platform, set `ffmpegPath` to the full executable path, for example `C:\ffmpeg\bin\ffmpeg.exe`.
 
 Default normalization:
 

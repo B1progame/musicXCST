@@ -3,12 +3,17 @@ package de.coulees.B1progame.musicxcst.command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.data.MusicEntry;
+import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
@@ -16,6 +21,7 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 public final class CstMusicCommands {
     private static final int PAGE_SIZE = 8;
@@ -39,9 +45,11 @@ public final class CstMusicCommands {
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
                         .then(Commands.argument("musicId", StringArgumentType.word())
+                                .suggests(CstMusicCommands::suggestOwnMusicIds)
                                 .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
                 .then(Commands.literal("delete")
                         .then(Commands.argument("musicId", StringArgumentType.word())
+                                .suggests(CstMusicCommands::suggestOwnMusicIds)
                                 .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
                 .then(Commands.literal("storage")
                         .executes(ctx -> storage(ctx.getSource())))
@@ -54,12 +62,15 @@ public final class CstMusicCommands {
                                         .executes(ctx -> adminList(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "page")))))
                         .then(Commands.literal("info")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
+                                        .suggests(CstMusicCommands::suggestAllMusicIds)
                                         .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true))))
                         .then(Commands.literal("delete")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
+                                        .suggests(CstMusicCommands::suggestAllMusicIds)
                                         .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true))))
                         .then(Commands.literal("play")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
+                                        .suggests(CstMusicCommands::suggestAllMusicIds)
                                         .executes(ctx -> adminPlay(ctx.getSource(), StringArgumentType.getString(ctx, "musicId")))))
                         .then(Commands.literal("reload").executes(ctx -> reload(ctx.getSource())))
                         .then(Commands.literal("repairindex").executes(ctx -> repairIndex(ctx.getSource())))));
@@ -219,6 +230,29 @@ public final class CstMusicCommands {
     private static boolean isAdmin(CommandSourceStack source) {
         return source.permissions() instanceof LevelBasedPermissionSet levelBased
                 && levelBased.level().isEqualOrHigherThan(PermissionLevel.ADMINS);
+    }
+
+    private static CompletableFuture<Suggestions> suggestOwnMusicIds(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            return SharedSuggestionProvider.suggest(
+                    Musicxcst.LIBRARY.listEntriesForPlayer(player).stream()
+                            .filter(entry -> !MusicStatus.isInvalidLike(entry.status))
+                            .map(entry -> entry.musicId),
+                    builder
+            );
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException exception) {
+            return Suggestions.empty();
+        }
+    }
+
+    private static CompletableFuture<Suggestions> suggestAllMusicIds(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                Musicxcst.LIBRARY.listAllEntries().stream()
+                        .filter(entry -> !MusicStatus.isInvalidLike(entry.status))
+                        .map(entry -> entry.musicId),
+                builder
+        );
     }
 
     private record CreateArguments(String hexColor, String location) {

@@ -5,7 +5,7 @@
       {
         "name": "minecraft:block/note_block/hat",
         "type": "event",
-        "volume": 0.0,
+        "volume": 0.001,
         "pitch": 1.0
       }
     ]

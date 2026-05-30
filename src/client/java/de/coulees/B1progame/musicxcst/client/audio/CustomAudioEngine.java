@@ -3,7 +3,10 @@ package de.coulees.B1progame.musicxcst.client.audio;
 import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -18,9 +21,17 @@ public final class CustomAudioEngine {
     }
 
     public static void play(JukeboxStartPayload payload, Path audioFile) {
+        AudioPlayer.PlayingSound current = PLAYING.get(payload.pos());
+        if (current != null && current.matches(payload) && current.active()) {
+            return;
+        }
+
         stop(new JukeboxStopPayload(payload.pos()));
         try {
-            PLAYING.put(payload.pos().immutable(), AudioPlayer.play(payload, audioFile));
+            AudioPlayer.PlayingSound sound = AudioPlayer.play(payload, audioFile);
+            if (sound != null) {
+                PLAYING.put(payload.pos().immutable(), sound);
+            }
         } catch (IOException exception) {
             Musicxcst.LOGGER.warn("Failed to decode Blueprint CD audio '{}': {}", payload.displayName(), exception.getMessage());
         }
@@ -33,14 +44,17 @@ public final class CustomAudioEngine {
         }
     }
 
-    public static void tick() {
+    public static void tick(Minecraft client) {
         Iterator<Map.Entry<BlockPos, AudioPlayer.PlayingSound>> iterator = PLAYING.entrySet().iterator();
         while (iterator.hasNext()) {
             AudioPlayer.PlayingSound sound = iterator.next().getValue();
             if (!sound.active()) {
                 sound.close();
                 iterator.remove();
+                continue;
             }
+
+            updateDistanceGain(client, sound);
         }
     }
 
@@ -49,5 +63,28 @@ public final class CustomAudioEngine {
             sound.close();
         }
         PLAYING.clear();
+    }
+
+    private static void updateDistanceGain(Minecraft client, AudioPlayer.PlayingSound sound) {
+        if (!sound.positional()) {
+            sound.setGain(1.0F);
+            return;
+        }
+
+        Player player = client.player;
+        if (player == null) {
+            sound.setGain(0.0F);
+            return;
+        }
+
+        double radius = Math.max(1.0D, sound.radiusBlocks());
+        double distance = player.position().distanceTo(Vec3.atCenterOf(sound.pos()));
+        if (distance >= radius) {
+            sound.setGain(0.0F);
+            return;
+        }
+
+        double normalized = distance / radius;
+        sound.setGain((float) ((1.0D - normalized) * (1.0D - normalized)));
     }
 }

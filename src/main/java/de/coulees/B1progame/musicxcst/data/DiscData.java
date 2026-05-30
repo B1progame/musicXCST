@@ -5,11 +5,15 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.DyedItemColor;
 
 public final class DiscData {
+    private static final Identifier VALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd");
+    private static final Identifier INVALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd_invalid");
+
     public String musicId;
     public String displayName;
     public String ownerUuid;
@@ -70,6 +74,7 @@ public final class DiscData {
         CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.put(Musicxcst.DISC_DATA_KEY, tag));
         stack.set(DataComponents.CUSTOM_NAME, buildHoverName(data));
         stack.set(DataComponents.DYED_COLOR, new DyedItemColor(renderColor(data)));
+        stack.set(DataComponents.ITEM_MODEL, MusicStatus.isInvalidLike(data.status) ? INVALID_MODEL : VALID_MODEL);
     }
 
     public static Component buildHoverName(DiscData data) {

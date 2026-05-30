@@ -14,6 +14,9 @@ import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
+import de.coulees.B1progame.musicxcst.service.audio.BundledFfmpegResolver;
+import de.coulees.B1progame.musicxcst.service.audio.PlaybackRangeTracker;
+import de.coulees.B1progame.musicxcst.service.audio.PlaybackSessionManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -23,8 +26,10 @@ import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
@@ -54,6 +59,8 @@ public final class MusicLibraryService {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private final Map<String, MusicEntry> entries = new LinkedHashMap<>();
+    private final PlaybackSessionManager playbackSessions = new PlaybackSessionManager();
+    private final PlaybackRangeTracker playbackRange = new PlaybackRangeTracker();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
     private Path configPath;
@@ -72,17 +79,26 @@ public final class MusicLibraryService {
     }
 
     public void onServerStopping(MinecraftServer server) {
+        playbackSessions.clear();
         saveConfig();
         saveIndex();
         this.server = null;
     }
 
     public void onServerTick(MinecraftServer server) {
-        if (this.server == null || server.getTickCount() % 100 != 0) {
+        if (this.server == null) {
             return;
         }
 
-        syncAllPlayers();
+        int rangeInterval = Math.max(1, config.rangeCheckIntervalTicks);
+        if (server.getTickCount() % rangeInterval == 0) {
+            refreshStatuses();
+            syncJukeboxPlaybackSessions();
+        }
+
+        if (server.getTickCount() % 100 == 0) {
+            syncAllPlayers();
+        }
     }
 
     public String reload() {
@@ -245,6 +261,7 @@ public final class MusicLibraryService {
             return;
         }
 
+        refreshStatuses();
         DiscData discData = DiscData.fromStack(stack);
         if (discData == null || MusicStatus.isInvalidLike(discData.status)) {
             stopJukeboxPlayback(level, pos);
@@ -253,16 +270,31 @@ public final class MusicLibraryService {
 
         MusicEntry entry = entries.get(discData.musicId);
         if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+            invalidateAndPopJukeboxDisc(serverLevel, pos, stack, discData, entry);
             stopJukeboxPlayback(level, pos);
             return;
         }
 
         try {
-            JukeboxStartPayload payload = startPayload(entry, pos, true);
+            PlaybackSessionManager.PlaybackSession existing = playbackSessions.session(pos);
+            long startedAtMillis = existing != null && Objects.equals(existing.musicId(), entry.musicId)
+                    ? existing.startedAtMillis()
+                    : System.currentTimeMillis();
+            if (existing == null || !Objects.equals(existing.musicId(), entry.musicId)) {
+                playbackSessions.start(new PlaybackSessionManager.PlaybackSession(
+                        entry.musicId,
+                        serverLevel.dimension(),
+                        pos.immutable(),
+                        config.playbackRadiusBlocks,
+                        startedAtMillis
+                ));
+            }
+            JukeboxStartPayload payload = startPayload(entry, pos, true, startedAtMillis);
             int sent = 0;
             for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), config.playbackRadiusBlocks)) {
                 if (ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
                     ServerPlayNetworking.send(player, payload);
+                    playbackSessions.markListening(pos.immutable(), player.getUUID());
                     sent++;
                 }
             }
@@ -272,6 +304,43 @@ public final class MusicLibraryService {
         } catch (IllegalArgumentException exception) {
             Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played: {}", entry.displayName, exception.getMessage());
             stopJukeboxPlayback(level, pos);
+        }
+    }
+
+    public boolean rejectInvalidJukeboxInsert(Player player, ItemStack stack) {
+        if (stack.getItem() != ModItems.BLUEPRINT_CD) {
+            return false;
+        }
+
+        DiscData data = DiscData.fromStack(stack);
+        if (data == null) {
+            return false;
+        }
+
+        refreshStatuses();
+        MusicEntry entry = entries.get(data.musicId);
+        String status = entry == null ? MusicStatus.INVALID : entry.status;
+        if (!MusicStatus.isInvalidLike(status)) {
+            return false;
+        }
+
+        data.status = status;
+        data.hexColor = "#C93A3A";
+        data.displayName = entry == null ? data.displayName : entry.displayName;
+        DiscData.writeToStack(stack, data);
+        player.displayClientMessage(Component.literal("This Blueprint CD is invalid and cannot be inserted."), true);
+        return true;
+    }
+
+    private void invalidateAndPopJukeboxDisc(ServerLevel level, BlockPos pos, ItemStack stack, DiscData data, MusicEntry entry) {
+        data.status = entry == null ? MusicStatus.INVALID : entry.status;
+        data.hexColor = "#C93A3A";
+        data.displayName = entry == null ? data.displayName : entry.displayName;
+        DiscData.writeToStack(stack, data);
+
+        if (level.getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
+            jukebox.setSongItemWithoutPlaying(stack);
+            jukebox.popOutTheItem();
         }
     }
 
@@ -310,10 +379,49 @@ public final class MusicLibraryService {
             return;
         }
 
+        playbackSessions.stop(pos);
         JukeboxStopPayload payload = new JukeboxStopPayload(pos);
-        for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 128.0D)) {
+        for (ServerPlayer player : serverLevel.getServer().getPlayerList().getPlayers()) {
             if (ServerPlayNetworking.canSend(player, JukeboxStopPayload.TYPE)) {
                 ServerPlayNetworking.send(player, payload);
+            }
+        }
+    }
+
+    private void syncJukeboxPlaybackSessions() {
+        for (PlaybackSessionManager.PlaybackSession session : playbackSessions.sessions().values()) {
+            MusicEntry entry = entries.get(session.musicId());
+            if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+                playbackSessions.stop(session.sourcePos());
+                continue;
+            }
+
+            JukeboxStartPayload payload;
+            try {
+                payload = startPayload(entry, session.sourcePos(), true, session.startedAtMillis());
+            } catch (IllegalArgumentException exception) {
+                Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot continue playback: {}", entry.displayName, exception.getMessage());
+                playbackSessions.stop(session.sourcePos());
+                continue;
+            }
+
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                if (!player.level().dimension().equals(session.dimension())) {
+                    if (playbackSessions.unmarkListening(session.sourcePos(), player.getUUID())
+                            && ServerPlayNetworking.canSend(player, JukeboxStopPayload.TYPE)) {
+                        ServerPlayNetworking.send(player, new JukeboxStopPayload(session.sourcePos()));
+                    }
+                    continue;
+                }
+
+                if (!playbackRange.isInRange(player, session.sourcePos(), session.radiusBlocks())) {
+                    continue;
+                }
+
+                if (playbackSessions.markListening(session.sourcePos(), player.getUUID())
+                        && ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
+                    ServerPlayNetworking.send(player, payload);
+                }
             }
         }
     }
@@ -354,6 +462,10 @@ public final class MusicLibraryService {
     }
 
     private JukeboxStartPayload startPayload(MusicEntry entry, BlockPos pos, boolean positional) {
+        return startPayload(entry, pos, positional, System.currentTimeMillis());
+    }
+
+    private JukeboxStartPayload startPayload(MusicEntry entry, BlockPos pos, boolean positional, long startedAtMillis) {
         Path file = resolvePlayableOgg(entry);
         return new JukeboxStartPayload(
                 pos,
@@ -361,7 +473,7 @@ public final class MusicLibraryService {
                 entry.displayName,
                 checksumForPlayback(entry, file),
                 safeFileSize(file),
-                System.currentTimeMillis(),
+                startedAtMillis,
                 config.playbackRadiusBlocks,
                 positional
         );
@@ -576,12 +688,10 @@ public final class MusicLibraryService {
     }
 
     private void runFfmpegNormalization(Path source, Path output) {
-        if (!isFfmpegAvailable()) {
-            throw new IllegalArgumentException("FFmpeg is required to import this audio format. Install FFmpeg or import an already-compatible .ogg file.");
-        }
+        String ffmpeg = resolveFfmpegExecutable();
 
         List<String> command = new ArrayList<>();
-        command.add(config.ffmpegPath == null || config.ffmpegPath.isBlank() ? "ffmpeg" : config.ffmpegPath);
+        command.add(ffmpeg);
         command.add("-y");
         command.add("-i");
         command.add(source.toString());
@@ -613,8 +723,35 @@ public final class MusicLibraryService {
         }
     }
 
-    private boolean isFfmpegAvailable() {
-        String executable = config.ffmpegPath == null || config.ffmpegPath.isBlank() ? "ffmpeg" : config.ffmpegPath;
+    private String resolveFfmpegExecutable() {
+        String configured = config.ffmpegPath == null ? "" : config.ffmpegPath.trim();
+        boolean explicitPath = !configured.isBlank() && !"ffmpeg".equalsIgnoreCase(configured);
+        if (explicitPath) {
+            if (isFfmpegAvailable(configured)) {
+                return configured;
+            }
+            throw new IllegalArgumentException("Configured ffmpegPath does not point to a working FFmpeg executable: " + configured);
+        }
+
+        try {
+            Path bundled = BundledFfmpegResolver.resolve(server.getServerDirectory());
+            if (bundled != null && isFfmpegAvailable(bundled.toString())) {
+                return bundled.toString();
+            }
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.warn("Failed to extract bundled FFmpeg: {}", exception.getMessage());
+        }
+
+        if (isFfmpegAvailable("ffmpeg")) {
+            return "ffmpeg";
+        }
+
+        throw new IllegalArgumentException("FFmpeg is required to import this audio format. Add a bundled binary at one of these resource paths: "
+                + BundledFfmpegResolver.supportedResourcePaths()
+                + ", configure ffmpegPath, or import an already-compatible .ogg file.");
+    }
+
+    private boolean isFfmpegAvailable(String executable) {
         try {
             Process process = new ProcessBuilder(executable, "-version").redirectErrorStream(true).start();
             return process.waitFor() == 0;
