@@ -59,6 +59,7 @@ Available commands:
 - `/cstmusic admin list [page]`
 - `/cstmusic admin info <musicId>`
 - `/cstmusic admin delete <musicId>`
+- `/cstmusic admin play <musicId>`
 - `/cstmusic admin reload`
 - `/cstmusic admin repairindex`
 
@@ -156,6 +157,7 @@ If an entry is deleted or the file goes missing:
 Current custom playback support:
 
 - `.ogg` files are sent from the server to nearby clients and played positionally from the jukebox
+- admins can test playback directly with `/cstmusic admin play <musicId>`
 - vanilla jukebox playback is pointed at a silent placeholder song so it does not fight the custom audio
 - unsupported formats such as `.mp3` can still be registered as metadata, but they do not play yet without a future converter or decoder
 

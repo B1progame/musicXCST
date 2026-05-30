@@ -218,6 +218,19 @@ public final class MusicLibraryService {
         return stats;
     }
 
+    public String playEntryForAdmin(CommandSourceStack source, ServerPlayer player, String musicId) {
+        MusicEntry entry = requireAdminVisibleEntry(source, musicId);
+        Path file = resolvePlayableOgg(entry);
+        byte[] audioBytes = readAudioBytes(file);
+        BlockPos pos = player.blockPosition();
+        JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
+        if (!ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
+            throw new IllegalArgumentException("This client cannot receive musicXCST playback packets. Restart the client with the latest mod jar.");
+        }
+        ServerPlayNetworking.send(player, payload);
+        return "Playing '" + entry.displayName + "' for " + player.getName().getString() + ".";
+    }
+
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
         if (!(level instanceof ServerLevel serverLevel) || stack.getItem() != ModItems.BLUEPRINT_CD) {
             return;
@@ -235,32 +248,23 @@ public final class MusicLibraryService {
             return;
         }
 
-        Path file = importRoot.resolve(entry.safeRelativePath).normalize();
-        if (!file.startsWith(importRoot) || !Files.isRegularFile(file)) {
-            stopJukeboxPlayback(level, pos);
-            return;
-        }
-
-        if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
-            Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played yet: only .ogg files are supported by the first custom jukebox pipeline.", entry.displayName);
-            stopJukeboxPlayback(level, pos);
-            return;
-        }
-
-        byte[] audioBytes;
         try {
-            audioBytes = Files.readAllBytes(file);
-        } catch (IOException exception) {
-            Musicxcst.LOGGER.warn("Failed to read Blueprint CD audio file {}", file.getFileName(), exception);
-            stopJukeboxPlayback(level, pos);
-            return;
-        }
-
-        JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
-        for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 96.0D)) {
-            if (ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
-                ServerPlayNetworking.send(player, payload);
+            Path file = resolvePlayableOgg(entry);
+            byte[] audioBytes = readAudioBytes(file);
+            JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
+            int sent = 0;
+            for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 96.0D)) {
+                if (ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
+                    ServerPlayNetworking.send(player, payload);
+                    sent++;
+                }
             }
+            if (sent == 0) {
+                Musicxcst.LOGGER.warn("Blueprint CD '{}' started, but no nearby clients could receive musicXCST playback packets.", entry.displayName);
+            }
+        } catch (IllegalArgumentException exception) {
+            Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played: {}", entry.displayName, exception.getMessage());
+            stopJukeboxPlayback(level, pos);
         }
     }
 
@@ -285,6 +289,29 @@ public final class MusicLibraryService {
             case MusicStatus.DELETED -> stats.deletedCount++;
             case MusicStatus.MISSING -> stats.missingCount++;
             default -> stats.invalidCount++;
+        }
+    }
+
+    private Path resolvePlayableOgg(MusicEntry entry) {
+        if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+            throw new IllegalArgumentException("Music entry is not active.");
+        }
+
+        Path file = importRoot.resolve(entry.safeRelativePath).normalize();
+        if (!file.startsWith(importRoot) || !Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("Music file is missing from the import folder.");
+        }
+        if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+            throw new IllegalArgumentException("Only .ogg files can play right now. Convert this file to .ogg first.");
+        }
+        return file;
+    }
+
+    private byte[] readAudioBytes(Path file) {
+        try {
+            return Files.readAllBytes(file);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to read music file " + file.getFileName() + ".", exception);
         }
     }
 

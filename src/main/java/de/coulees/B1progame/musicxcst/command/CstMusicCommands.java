@@ -58,6 +58,9 @@ public final class CstMusicCommands {
                         .then(Commands.literal("delete")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
                                         .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true))))
+                        .then(Commands.literal("play")
+                                .then(Commands.argument("musicId", StringArgumentType.word())
+                                        .executes(ctx -> adminPlay(ctx.getSource(), StringArgumentType.getString(ctx, "musicId")))))
                         .then(Commands.literal("reload").executes(ctx -> reload(ctx.getSource())))
                         .then(Commands.literal("repairindex").executes(ctx -> repairIndex(ctx.getSource())))));
     }
@@ -75,6 +78,7 @@ public final class CstMusicCommands {
             source.sendSuccess(() -> Component.literal("/cstmusic admin list [page]"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin info <musicId>"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin delete <musicId>"), false);
+            source.sendSuccess(() -> Component.literal("/cstmusic admin play <musicId>"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin reload"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin repairindex"), false);
         }
@@ -202,6 +206,13 @@ public final class CstMusicCommands {
 
     private static int repairIndex(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.repairIndex()), true);
+        return 1;
+    }
+
+    private static int adminPlay(CommandSourceStack source, String musicId) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        String result = Musicxcst.LIBRARY.playEntryForAdmin(source, player, musicId);
+        source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }
 
