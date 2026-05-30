@@ -50,12 +50,10 @@ Later versions should add:
 - client upload flow for integrated and dedicated servers
 - direct client-to-server upload for friends on multiplayer servers, because server commands cannot read files from a player's private computer
 - server-side import validation
-- background conversion pipeline where needed
-- MP3/AAC/FLAC/WebM conversion into a client-playable cache format, likely OGG Vorbis first
-- stereo playback support
-- positional and directional audio support
-- multiplayer synchronization
-- client-side caching
+- reuse the command version's FFmpeg normalization pipeline
+- upload progress, cancellation, and server quota errors
+- exact playback seek/sync for late listeners
+- optional richer disc design asset upload up to the configured `128x128` maximum
 
 ## Migration Notes
 

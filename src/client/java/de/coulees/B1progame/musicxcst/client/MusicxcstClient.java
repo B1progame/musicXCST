@@ -1,5 +1,8 @@
 package de.coulees.B1progame.musicxcst.client;
 
+import de.coulees.B1progame.musicxcst.client.audio.ClientAudioDownloadManager;
+import de.coulees.B1progame.musicxcst.client.audio.CustomAudioEngine;
+import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -11,9 +14,13 @@ public class MusicxcstClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> ClientJukeboxAudio.start(payload));
-        ClientPlayNetworking.registerGlobalReceiver(JukeboxStopPayload.TYPE, (payload, context) -> ClientJukeboxAudio.stop(payload));
-        ClientTickEvents.END_CLIENT_TICK.register(client -> ClientJukeboxAudio.tick());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ClientJukeboxAudio.stopAll());
+        ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> ClientAudioDownloadManager.handleStart(payload));
+        ClientPlayNetworking.registerGlobalReceiver(AudioChunkPayload.TYPE, (payload, context) -> ClientAudioDownloadManager.handleChunk(payload));
+        ClientPlayNetworking.registerGlobalReceiver(JukeboxStopPayload.TYPE, (payload, context) -> CustomAudioEngine.stop(payload));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> CustomAudioEngine.tick());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            ClientAudioDownloadManager.clear();
+            CustomAudioEngine.stopAll();
+        });
     }
 }

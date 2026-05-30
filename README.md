@@ -1,53 +1,37 @@
 # musicXCST
 
-`musicXCST` is a Fabric mod for Minecraft `26.1.2` that adds custom writable music CDs. The current first version is deliberately small: players craft a blank `Blueprint CD`, register server-safe music metadata with a command, and write that metadata onto the disc item.
+`musicXCST` is a Fabric mod for Minecraft `26.1.2` that adds writable custom music CDs. The current version is command-based: players craft a blank `Blueprint CD`, import a server-safe music file with `/cstmusic`, and play the written disc through the mod's custom audio backend.
 
-## First-Version Scope
+## Current Scope
 
-Included now:
+Implemented now:
 
-- blank writable `Blueprint CD` item
-- crafting recipe for the blank disc
-- `/cstmusic` command tree
-- server-side metadata index
-- ownership rules
-- admin management commands
-- jukebox insertion/ejection support
-- first custom jukebox playback pipeline for `.ogg` files
-- invalid / deleted disc handling
-- config file for quotas, extensions, and import folder rules
+- blank and written `Blueprint CD` item metadata
+- crafting recipe using iron nuggets and a blue stained glass pane
+- `/cstmusic` player and admin commands
+- server metadata index with ownership, status, quotas, hashes, and safe relative paths
+- FFmpeg-backed normalization to OGG Vorbis for real songs, speech, vocals, and long audio
+- client chunk download, SHA-256 validation, cache, STB Vorbis decode, and OpenAL playback
+- jukebox insertion/ejection hooks for custom CDs
+- invalid/deleted disc state
 
-Not included yet:
+Not implemented yet:
 
-- CD Writer block
+- CD Writer block behavior
 - CD Writer GUI
-- client upload flow
-- MP3 conversion / decoding
-- directional or synchronized multiplayer audio
+- client upload/file picker workflow
+- exact late-join seek into already-playing songs
+- bundled audio codec binaries
 
-## Crafting the Blank CD
+## Commands
 
-Recipe shape:
-
-```text
-  iron nugget
-iron nugget + blue stained glass pane + iron nugget
-  iron nugget
-```
-
-Crafting result:
-
-- `Blueprint CD`
-
-## Command Usage
-
-All commands use a single root:
+All commands use one root:
 
 ```text
 /cstmusic
 ```
 
-Available commands:
+Player commands:
 
 - `/cstmusic help`
 - `/cstmusic create <name> <hexColor> <location>`
@@ -55,6 +39,9 @@ Available commands:
 - `/cstmusic info <musicId>`
 - `/cstmusic delete <musicId>`
 - `/cstmusic storage`
+
+Admin commands:
+
 - `/cstmusic admin storage`
 - `/cstmusic admin list [page]`
 - `/cstmusic admin info <musicId>`
@@ -63,73 +50,43 @@ Available commands:
 - `/cstmusic admin reload`
 - `/cstmusic admin repairindex`
 
-## Creating a Written CD
-
-Current workflow:
+## Creating a CD
 
 1. Craft a blank `Blueprint CD`.
-2. Hold the blank disc in the selected hotbar slot.
-3. Put the music file inside the configured server import folder.
+2. Hold it in the selected hotbar slot.
+3. Put the audio file in the configured server import folder, or use an absolute path only in allowed singleplayer/admin cases.
 4. Run:
 
 ```text
-/cstmusic create "Song Name" #00AAFF folder/song.ogg
+/cstmusic create "Song Name" #00AAFF folder/song.mp3
 ```
 
-In singleplayer or an integrated server, local absolute paths can also be imported:
+In singleplayer, quoted Windows paths are supported when `allowSingleplayerAbsolutePaths` is enabled:
 
 ```text
-/cstmusic create "Song Name" #00AAFF "C:\Users\Name\Music\song.mp3"
+/cstmusic create "Song Name" #4d1111 "C:\Users\Name\Music\song.mp3"
 ```
 
-The file is copied into the world import folder and the private absolute path is not stored on the disc or in the metadata index.
+Dedicated servers cannot read a friend's private computer path from chat. The file must exist on the server import folder, or a later CD Writer upload flow must send it to the server.
 
-Behavior notes:
+## Audio Engine
 
-- the command requires a blank `Blueprint CD`
-- a stack of blank discs will consume one and create one written disc
-- the written disc stores a music ID, owner, color, display name, status, design placeholder, and schema version
+The mod does not create one Minecraft sound event per uploaded song and does not require resource pack rebuilds. Imported audio is normalized server-side into OGG Vorbis, stored under the world audio storage folder, and sent to clients on demand in chunks.
 
-## Ownership Rules
+Playback flow:
 
-Each music entry stores:
+1. A jukebox or admin command starts a playback session.
+2. The server sends metadata: music ID, checksum, size, source position, radius, and start time.
+3. The client checks `musicxcst-cache`.
+4. Missing audio is requested from the server in 128 KiB chunks.
+5. The client verifies SHA-256 before playback.
+6. The client decodes OGG with STB Vorbis and plays through OpenAL.
 
-- unique music ID
-- owner UUID
-- owner name
-- safe relative import path
-- file metadata
+Jukebox playback is positional. Admin test playback uses non-positional stereo playback for the requesting admin.
 
-Rules:
+## FFmpeg
 
-- normal players can list, inspect, create, and delete only their own entries
-- admins can manage all entries
-- written discs preserve the original owner metadata
-- obtaining another player's disc does not transfer ownership of the underlying music entry
-
-## Storage and Config
-
-The mod writes:
-
-- config: `config/musicxcst.json`
-- metadata index: `<world>/data/musicxcst/music-index.json`
-- import folder: `<world>/music-import/` by default
-- absolute import copy folder: `<world>/music-import/imported/` by default
-
-Config fields include:
-
-- max file size per entry
-- max storage per player
-- max total server storage
-- allowed file extensions
-- server import folder
-- singleplayer absolute path import toggle
-- admin absolute server path import toggle
-- soft delete toggle
-- future playback ownership toggles
-- debug logging
-
-Allowed extensions in the first version:
+Supported input extensions:
 
 - `mp3`
 - `mp4`
@@ -140,74 +97,47 @@ Allowed extensions in the first version:
 - `aac`
 - `webm`
 
-## Deleted and Missing Music
+Non-OGG files require FFmpeg. Configure `ffmpegPath` in `config/musicxcst.json` if `ffmpeg` is not on the server PATH. OGG files can be copied into normalized storage without conversion.
 
-If an entry is deleted or the file goes missing:
+Default normalization:
 
-- metadata stays in the index
-- discs do not crash
-- the disc name becomes invalid/red
-- tooltips warn that the audio is missing, deleted, or invalid
-- future playback can fail safely against the stored status
+- format: OGG Vorbis
+- bitrate: `128k`
+- sample rate: `44100`
+- stereo: enabled unless mono downmix is configured
 
-## Jukebox Behavior
+## Storage and Config
 
-`Blueprint CD` items can be inserted into and removed from vanilla jukeboxes.
+Files:
 
-Current custom playback support:
+- config: `config/musicxcst.json`
+- metadata index: `<world>/data/musicxcst/music-index.json`
+- import folder: `<world>/music-import/`
+- normalized audio: `<world>/music-normalized/`
+- client cache: `<game directory>/musicxcst-cache/`
 
-- `.ogg` files are sent from the server to nearby clients and played positionally from the jukebox
-- admins can test playback directly with `/cstmusic admin play <musicId>`
-- vanilla jukebox playback is pointed at a silent placeholder song so it does not fight the custom audio
-- unsupported formats such as `.mp3` can still be registered as metadata, but they do not play yet without a future converter or decoder
+Important config fields include max file size, per-player quota, total server quota, allowed extensions, import folder, normalized output format, bitrate, sample rate, stereo/mono settings, playback radius, range interval, fade timings, FFmpeg path, found-disc playback rules, soft delete, and debug logging.
 
-## Safety Rules
+## Ownership
 
-The first version accepts server-side import paths inside the configured import folder. It can also import quoted absolute paths in singleplayer or integrated-server worlds.
+Every music entry stores an owner UUID. Normal players can only list, inspect, delete, and create discs from their own entries. Admins can manage all entries. A physical written disc can move between players, but ownership of the stored music entry does not change.
 
-Current safety behavior:
+Config keeps future behavior options for found/stolen discs: allow anyone to play found discs, owner-only playback, and admin bypass.
 
-- singleplayer absolute paths are copied into the world import folder
-- dedicated-server absolute paths are rejected by default
-- dedicated servers can enable admin-only absolute server paths with `allowAdminAbsoluteServerPaths`
-- path traversal is rejected
-- only configured extensions are accepted
-- file size quotas are enforced
-- only safe relative paths are stored
-- private local client paths are not written onto the item
+## Deleted or Missing Audio
 
-On a dedicated multiplayer server, a command cannot read a file from a player's computer. The file must already exist on the server, be placed into the import folder, or be uploaded later through the planned CD Writer upload flow.
-
-## Known Limitations
-
-- no client upload flow yet
-- no local singleplayer file picker yet
-- custom jukebox playback currently supports `.ogg` first
-- MP3 and other formats need conversion or decoder support before playback
-- only one disc item model is used right now; written discs are still `Blueprint CD` items with metadata
-- custom disc color is stored as real RGB metadata and reflected in name/item bar color for now
-- invalid state is communicated through name, tooltip, item bar color, and the red invalid placeholder texture reserved for future model overrides
-- runtime behavior was build-verified, but not exercised through a live in-game command session in this repository
+Deleted and missing entries do not crash existing discs. Metadata is marked deleted, missing, or invalid; discs update their status and tooltip; playback fails safely.
 
 ## Future CD Writer
 
-The future workstation plan is documented in [docs/future-cd-writer-plan.md](docs/future-cd-writer-plan.md).
+The CD Writer is planned but not implemented in this patch. See [docs/future-cd-writer-plan.md](docs/future-cd-writer-plan.md) for the block, GUI, upload flow, color picker, design selector, and custom design size plan up to `128x128`.
 
-Planned later:
-
-- CD Writer block
-- note-block based recipe
-- DJ-style write GUI
-- disc design selector with default `16x16` designs and possible custom designs up to `128x128`
-- client upload and conversion pipeline
-- playback and synchronization features
-
-## Building From Source
+## Building
 
 Requirements:
 
-- Java `25`
-- Minecraft `26.1.2`
+- Java `25` or the project-compatible JDK used by the current Minecraft `26.1.2` toolchain
+- Fabric Loom `1.16.2`
 
 Build:
 
@@ -216,16 +146,6 @@ Build:
 ```
 
 Output jars are written to `build/libs/`.
-
-## GitHub Notes
-
-The local folder is already a Git repository. GitHub publication is currently blocked because the installed `gh` client has an invalid authentication token. After re-authentication, the repository can be created and pushed with:
-
-```powershell
-gh auth login -h github.com
-gh repo create musicXCST --public --source . --remote origin --push
-gh repo edit --description "Fabric Minecraft mod for custom writable music CDs" --add-topic minecraft --add-topic fabric --add-topic minecraft-mod --add-topic music-disc --add-topic custom-audio --add-topic cstmusic
-```
 
 ## License
 

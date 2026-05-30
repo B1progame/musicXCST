@@ -10,6 +10,8 @@ import de.coulees.B1progame.musicxcst.data.MusicIndexFile;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
 import de.coulees.B1progame.musicxcst.init.ModItems;
+import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
+import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import net.minecraft.commands.CommandSourceStack;
@@ -29,6 +31,7 @@ import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Reader;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
@@ -56,6 +59,7 @@ public final class MusicLibraryService {
     private Path configPath;
     private Path indexPath;
     private Path importRoot;
+    private Path normalizedRoot;
 
     public void onServerStarted(MinecraftServer server) {
         this.server = server;
@@ -121,6 +125,7 @@ public final class MusicLibraryService {
         long fileSize = safeFileSize(resolved);
         validateFile(resolved, fileSize);
         validateQuota(player.getUUID(), fileSize);
+        NormalizedAudio normalizedAudio = normalizeAudio(resolved, musicId);
 
         MusicEntry entry = new MusicEntry();
         entry.musicId = musicId;
@@ -132,6 +137,12 @@ public final class MusicLibraryService {
         entry.createdAtEpochMillis = Instant.now().toEpochMilli();
         entry.fileSizeBytes = fileSize;
         entry.sha256 = sha256(resolved);
+        entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
+        entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
+        entry.normalizedSha256 = normalizedAudio.sha256();
+        entry.normalizedFormat = config.normalizedOutputFormat;
+        entry.normalizedSampleRate = config.sampleRate;
+        entry.normalizedBitrate = config.audioBitrate;
         entry.status = MusicStatus.ACTIVE;
         entry.hexColor = normalizedColor;
         entry.schemaVersion = Musicxcst.DISC_SCHEMA_VERSION;
@@ -220,10 +231,8 @@ public final class MusicLibraryService {
 
     public String playEntryForAdmin(CommandSourceStack source, ServerPlayer player, String musicId) {
         MusicEntry entry = requireAdminVisibleEntry(source, musicId);
-        Path file = resolvePlayableOgg(entry);
-        byte[] audioBytes = readAudioBytes(file);
         BlockPos pos = player.blockPosition();
-        JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
+        JukeboxStartPayload payload = startPayload(entry, pos, false);
         if (!ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
             throw new IllegalArgumentException("This client cannot receive musicXCST playback packets. Restart the client with the latest mod jar.");
         }
@@ -249,11 +258,9 @@ public final class MusicLibraryService {
         }
 
         try {
-            Path file = resolvePlayableOgg(entry);
-            byte[] audioBytes = readAudioBytes(file);
-            JukeboxStartPayload payload = new JukeboxStartPayload(pos, entry.musicId, entry.displayName, audioBytes);
+            JukeboxStartPayload payload = startPayload(entry, pos, true);
             int sent = 0;
-            for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), 96.0D)) {
+            for (ServerPlayer player : PlayerLookup.around(serverLevel, Vec3.atCenterOf(pos), config.playbackRadiusBlocks)) {
                 if (ServerPlayNetworking.canSend(player, JukeboxStartPayload.TYPE)) {
                     ServerPlayNetworking.send(player, payload);
                     sent++;
@@ -266,6 +273,36 @@ public final class MusicLibraryService {
             Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played: {}", entry.displayName, exception.getMessage());
             stopJukeboxPlayback(level, pos);
         }
+    }
+
+    public void sendAudioChunk(ServerPlayer player, AudioChunkRequestPayload request) {
+        ensureServer();
+        MusicEntry entry = entries.get(request.musicId());
+        if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+            return;
+        }
+
+        Path file = resolvePlayableOgg(entry);
+        long totalSize = safeFileSize(file);
+        long offset = Math.max(0L, request.offset());
+        if (offset >= totalSize) {
+            ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, totalSize, totalSize, checksumForPlayback(entry, file), new byte[0], true));
+            return;
+        }
+
+        int maxBytes = Math.max(1, Math.min(request.maxBytes(), 128 * 1024));
+        int count = (int) Math.min(maxBytes, totalSize - offset);
+        byte[] data;
+        try (InputStream input = Files.newInputStream(file)) {
+            input.skipNBytes(offset);
+            data = input.readNBytes(count);
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.warn("Failed to stream Blueprint CD audio chunk '{}': {}", entry.musicId, exception.getMessage());
+            return;
+        }
+
+        boolean last = offset + data.length >= totalSize;
+        ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, offset, totalSize, checksumForPlayback(entry, file), data, last));
     }
 
     public void stopJukeboxPlayback(Level level, BlockPos pos) {
@@ -297,22 +334,44 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Music entry is not active.");
         }
 
-        Path file = importRoot.resolve(entry.safeRelativePath).normalize();
-        if (!file.startsWith(importRoot) || !Files.isRegularFile(file)) {
-            throw new IllegalArgumentException("Music file is missing from the import folder.");
+        Path file;
+        Path root;
+        if (entry.normalizedRelativePath != null && !entry.normalizedRelativePath.isBlank()) {
+            root = normalizedRoot;
+            file = normalizedRoot.resolve(entry.normalizedRelativePath).normalize();
+        } else {
+            root = importRoot;
+            file = importRoot.resolve(entry.safeRelativePath).normalize();
+        }
+
+        if (!file.startsWith(root) || !Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("Normalized music file is missing.");
         }
         if (!file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
-            throw new IllegalArgumentException("Only .ogg files can play right now. Convert this file to .ogg first.");
+            throw new IllegalArgumentException("Only normalized .ogg files can play. Re-import this entry with FFmpeg available.");
         }
         return file;
     }
 
-    private byte[] readAudioBytes(Path file) {
-        try {
-            return Files.readAllBytes(file);
-        } catch (IOException exception) {
-            throw new IllegalArgumentException("Failed to read music file " + file.getFileName() + ".", exception);
+    private JukeboxStartPayload startPayload(MusicEntry entry, BlockPos pos, boolean positional) {
+        Path file = resolvePlayableOgg(entry);
+        return new JukeboxStartPayload(
+                pos,
+                entry.musicId,
+                entry.displayName,
+                checksumForPlayback(entry, file),
+                safeFileSize(file),
+                System.currentTimeMillis(),
+                config.playbackRadiusBlocks,
+                positional
+        );
+    }
+
+    private String checksumForPlayback(MusicEntry entry, Path file) {
+        if (entry.normalizedSha256 != null && !entry.normalizedSha256.isBlank()) {
+            return entry.normalizedSha256;
         }
+        return sha256(file);
     }
 
     private MusicEntry requireEntry(String musicId) {
@@ -334,6 +393,7 @@ public final class MusicLibraryService {
         this.configPath = serverDirectory.resolve("config").resolve("musicxcst.json");
         this.indexPath = server.getWorldPath(LevelResource.ROOT).resolve("data").resolve("musicxcst").resolve("music-index.json");
         this.importRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverImportFolder).normalize();
+        this.normalizedRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverNormalizedAudioFolder).normalize();
     }
 
     private void loadConfig() {
@@ -351,7 +411,9 @@ public final class MusicLibraryService {
                 }
             }
             this.importRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverImportFolder).normalize();
+            this.normalizedRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverNormalizedAudioFolder).normalize();
             Files.createDirectories(importRoot);
+            Files.createDirectories(normalizedRoot);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to load config " + configPath, exception);
         }
@@ -420,12 +482,19 @@ public final class MusicLibraryService {
                 continue;
             }
 
-            Path file = importRoot.resolve(entry.safeRelativePath).normalize();
-            if (!file.startsWith(importRoot)) {
+            Path file = entry.normalizedRelativePath == null || entry.normalizedRelativePath.isBlank()
+                    ? importRoot.resolve(entry.safeRelativePath).normalize()
+                    : normalizedRoot.resolve(entry.normalizedRelativePath).normalize();
+            Path root = entry.normalizedRelativePath == null || entry.normalizedRelativePath.isBlank() ? importRoot : normalizedRoot;
+            if (!file.startsWith(root)) {
                 entry.status = MusicStatus.INVALID;
             } else if (Files.isRegularFile(file)) {
                 entry.status = MusicStatus.ACTIVE;
-                entry.fileSizeBytes = safeFileSize(file);
+                if (entry.normalizedRelativePath != null && !entry.normalizedRelativePath.isBlank()) {
+                    entry.normalizedSizeBytes = safeFileSize(file);
+                } else {
+                    entry.fileSizeBytes = safeFileSize(file);
+                }
             } else {
                 entry.status = MusicStatus.MISSING;
             }
@@ -465,15 +534,110 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Music file exceeds the configured max size.");
         }
 
-        String fileName = resolved.getFileName().toString().toLowerCase(Locale.ROOT);
-        int dot = fileName.lastIndexOf('.');
-        if (dot < 0) {
+        String extension = extension(resolved.getFileName().toString());
+        if (extension.isBlank()) {
             throw new IllegalArgumentException("Music file has no extension.");
         }
-        String extension = fileName.substring(dot + 1);
         if (!config.allowedFileExtensions.contains(extension)) {
             throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
         }
+    }
+
+    private NormalizedAudio normalizeAudio(Path source, String musicId) {
+        String outputFormat = config.normalizedOutputFormat == null || config.normalizedOutputFormat.isBlank()
+                ? "ogg"
+                : config.normalizedOutputFormat.toLowerCase(Locale.ROOT);
+        if (!"ogg".equals(outputFormat)) {
+            throw new IllegalArgumentException("Only OGG Vorbis normalized output is supported in this version.");
+        }
+
+        Path folder = normalizedRoot.resolve(musicId.substring(0, 2)).normalize();
+        if (!folder.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("Normalized audio folder escapes the server storage root.");
+        }
+
+        Path output = folder.resolve(musicId + ".ogg").normalize();
+        if (!output.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("Normalized audio output escapes the server storage root.");
+        }
+
+        try {
+            Files.createDirectories(folder);
+            if ("ogg".equals(extension(source.getFileName().toString()))) {
+                Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                runFfmpegNormalization(source, output);
+            }
+            long sizeBytes = safeFileSize(output);
+            return new NormalizedAudio(normalizedRoot.relativize(output).toString().replace('\\', '/'), sizeBytes, sha256(output));
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to store normalized audio.", exception);
+        }
+    }
+
+    private void runFfmpegNormalization(Path source, Path output) {
+        if (!isFfmpegAvailable()) {
+            throw new IllegalArgumentException("FFmpeg is required to import this audio format. Install FFmpeg or import an already-compatible .ogg file.");
+        }
+
+        List<String> command = new ArrayList<>();
+        command.add(config.ffmpegPath == null || config.ffmpegPath.isBlank() ? "ffmpeg" : config.ffmpegPath);
+        command.add("-y");
+        command.add("-i");
+        command.add(source.toString());
+        command.add("-vn");
+        command.add("-map");
+        command.add("a:0");
+        command.add("-c:a");
+        command.add("libvorbis");
+        command.add("-b:a");
+        command.add(config.audioBitrate == null || config.audioBitrate.isBlank() ? "128k" : config.audioBitrate);
+        command.add("-ar");
+        command.add(Integer.toString(config.sampleRate <= 0 ? 44100 : config.sampleRate));
+        command.add("-ac");
+        command.add(config.monoDownmix ? "1" : (config.stereoEnabled ? "2" : "1"));
+        command.add(output.toString());
+
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exit = process.waitFor();
+            if (exit != 0) {
+                throw new IllegalArgumentException("FFmpeg failed to normalize audio. " + safeProcessLog(log));
+            }
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to run FFmpeg. Check the configured ffmpegPath.", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalArgumentException("FFmpeg normalization was interrupted.", exception);
+        }
+    }
+
+    private boolean isFfmpegAvailable() {
+        String executable = config.ffmpegPath == null || config.ffmpegPath.isBlank() ? "ffmpeg" : config.ffmpegPath;
+        try {
+            Process process = new ProcessBuilder(executable, "-version").redirectErrorStream(true).start();
+            return process.waitFor() == 0;
+        } catch (IOException exception) {
+            return false;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private String safeProcessLog(String log) {
+        if (log == null || log.isBlank()) {
+            return "No FFmpeg output was captured.";
+        }
+        String scrubbed = log.replace('\\', '/').replaceAll("[A-Za-z]:/[^\\s]+", "<local-path>");
+        return scrubbed.length() > 500 ? scrubbed.substring(0, 500) : scrubbed;
+    }
+
+    private String extension(String fileName) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
+        int dot = lower.lastIndexOf('.');
+        return dot < 0 ? "" : lower.substring(dot + 1);
     }
 
     private ImportedMusicFile resolveMusicFile(CommandSourceStack source, ServerPlayer player, String requestedLocation, String musicId) {
@@ -649,5 +813,8 @@ public final class MusicLibraryService {
     }
 
     private record ImportedMusicFile(Path path, String originalFileName, String safeRelativePath) {
+    }
+
+    private record NormalizedAudio(String safeRelativePath, long sizeBytes, String sha256) {
     }
 }

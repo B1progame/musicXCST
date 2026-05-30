@@ -10,6 +10,12 @@ public final class MusicEntry {
     public long createdAtEpochMillis;
     public long fileSizeBytes;
     public String sha256;
+    public String normalizedRelativePath;
+    public long normalizedSizeBytes;
+    public String normalizedSha256;
+    public String normalizedFormat;
+    public int normalizedSampleRate;
+    public String normalizedBitrate;
     public String status;
     public String hexColor;
     public int schemaVersion;

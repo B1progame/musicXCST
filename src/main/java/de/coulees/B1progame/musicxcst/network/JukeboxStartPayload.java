@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, byte[] audioBytes) implements CustomPacketPayload {
+public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, String sha256, long sizeBytes, long startedAtMillis, int radiusBlocks, boolean positional) implements CustomPacketPayload {
     public static final Type<JukeboxStartPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "jukebox_start"));
     public static final StreamCodec<RegistryFriendlyByteBuf, JukeboxStartPayload> CODEC = StreamCodec.ofMember(JukeboxStartPayload::write, JukeboxStartPayload::read);
 
@@ -16,7 +16,11 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
                 buffer.readBlockPos(),
                 buffer.readUtf(128),
                 buffer.readUtf(128),
-                buffer.readByteArray(32 * 1024 * 1024)
+                buffer.readUtf(128),
+                buffer.readLong(),
+                buffer.readLong(),
+                buffer.readVarInt(),
+                buffer.readBoolean()
         );
     }
 
@@ -24,7 +28,11 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
         buffer.writeBlockPos(pos);
         buffer.writeUtf(musicId, 128);
         buffer.writeUtf(displayName, 128);
-        buffer.writeByteArray(audioBytes);
+        buffer.writeUtf(sha256, 128);
+        buffer.writeLong(sizeBytes);
+        buffer.writeLong(startedAtMillis);
+        buffer.writeVarInt(radiusBlocks);
+        buffer.writeBoolean(positional);
     }
 
     @Override

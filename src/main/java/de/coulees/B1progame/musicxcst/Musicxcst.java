@@ -3,6 +3,8 @@ package de.coulees.B1progame.musicxcst;
 import de.coulees.B1progame.musicxcst.command.CstMusicCommands;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.init.ModSounds;
+import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
+import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import de.coulees.B1progame.musicxcst.service.MusicLibraryService;
@@ -12,6 +14,7 @@ import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.world.item.CreativeModeTabs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,8 +28,11 @@ public final class Musicxcst implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        PayloadTypeRegistry.clientboundPlay().registerLarge(JukeboxStartPayload.TYPE, JukeboxStartPayload.CODEC, 32 * 1024 * 1024);
+        PayloadTypeRegistry.clientboundPlay().register(JukeboxStartPayload.TYPE, JukeboxStartPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(JukeboxStopPayload.TYPE, JukeboxStopPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().registerLarge(AudioChunkPayload.TYPE, AudioChunkPayload.CODEC, 256 * 1024);
+        PayloadTypeRegistry.serverboundPlay().register(AudioChunkRequestPayload.TYPE, AudioChunkRequestPayload.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(AudioChunkRequestPayload.TYPE, (payload, context) -> LIBRARY.sendAudioChunk(context.player(), payload));
         ModSounds.register();
         ModItems.register();
         CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
