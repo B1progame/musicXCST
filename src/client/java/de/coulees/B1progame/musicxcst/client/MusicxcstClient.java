@@ -14,9 +14,9 @@ public class MusicxcstClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> ClientAudioDownloadManager.handleStart(payload));
-        ClientPlayNetworking.registerGlobalReceiver(AudioChunkPayload.TYPE, (payload, context) -> ClientAudioDownloadManager.handleChunk(payload));
-        ClientPlayNetworking.registerGlobalReceiver(JukeboxStopPayload.TYPE, (payload, context) -> CustomAudioEngine.stop(payload));
+        ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleStart(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(AudioChunkPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleChunk(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(JukeboxStopPayload.TYPE, (payload, context) -> context.client().execute(() -> CustomAudioEngine.stop(payload)));
         ClientTickEvents.END_CLIENT_TICK.register(client -> CustomAudioEngine.tick());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             ClientAudioDownloadManager.clear();

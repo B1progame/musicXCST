@@ -4,6 +4,16 @@
 
 If importing an MP3 or other non-OGG file fails with an FFmpeg message, install FFmpeg and set `ffmpegPath` in `config/musicxcst.json`.
 
+Install it on the server or the singleplayer/integrated host, not on every multiplayer client:
+
+```powershell
+winget install Gyan.FFmpeg
+```
+
+```bash
+sudo apt install ffmpeg
+```
+
 ## Jukebox Disc Is Silent
 
 Check that the entry is active with `/cstmusic info <musicId>`. If the normalized file is missing, run `/cstmusic admin repairindex` and re-import the song if needed.

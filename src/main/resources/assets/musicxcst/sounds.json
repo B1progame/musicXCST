@@ -1,0 +1,13 @@
+{
+  "blueprint_cd_silence": {
+    "subtitle": "subtitles.musicxcst.blueprint_cd_silence",
+    "sounds": [
+      {
+        "name": "minecraft:block/note_block/hat",
+        "type": "event",
+        "volume": 0.0,
+        "pitch": 1.0
+      }
+    ]
+  }
+}

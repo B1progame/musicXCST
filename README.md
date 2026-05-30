@@ -99,6 +99,38 @@ Supported input extensions:
 
 Non-OGG files require FFmpeg. Configure `ffmpegPath` in `config/musicxcst.json` if `ffmpeg` is not on the server PATH. OGG files can be copied into normalized storage without conversion.
 
+musicXCST does not install FFmpeg automatically. FFmpeg should be installed on the machine running the Minecraft server or integrated singleplayer server. Normal multiplayer clients do not need FFmpeg for playback.
+
+Common install commands:
+
+```powershell
+# Windows, with winget
+winget install Gyan.FFmpeg
+
+# Windows, with Chocolatey
+choco install ffmpeg
+```
+
+```bash
+# Debian/Ubuntu server
+sudo apt update
+sudo apt install ffmpeg
+
+# Fedora server
+sudo dnf install ffmpeg
+
+# macOS server/integrated host
+brew install ffmpeg
+```
+
+Check the server can see it:
+
+```bash
+ffmpeg -version
+```
+
+If the command is not globally available, set `ffmpegPath` to the full executable path, for example `C:\ffmpeg\bin\ffmpeg.exe`.
+
 Default normalization:
 
 - format: OGG Vorbis
