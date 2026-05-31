@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, String sha256, long sizeBytes, long startedAtMillis, int radiusBlocks, boolean positional, boolean looping) implements CustomPacketPayload {
+public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, String sha256, long sizeBytes, String previewSha256, long previewSizeBytes, long startedAtMillis, int radiusBlocks, boolean positional, boolean looping) implements CustomPacketPayload {
     public static final Type<JukeboxStartPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "jukebox_start"));
     public static final StreamCodec<RegistryFriendlyByteBuf, JukeboxStartPayload> CODEC = StreamCodec.ofMember(JukeboxStartPayload::write, JukeboxStartPayload::read);
 
@@ -16,6 +16,8 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
                 buffer.readBlockPos(),
                 buffer.readUtf(128),
                 buffer.readUtf(128),
+                buffer.readUtf(128),
+                buffer.readLong(),
                 buffer.readUtf(128),
                 buffer.readLong(),
                 buffer.readLong(),
@@ -31,6 +33,8 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
         buffer.writeUtf(displayName, 128);
         buffer.writeUtf(sha256, 128);
         buffer.writeLong(sizeBytes);
+        buffer.writeUtf(previewSha256 == null ? "" : previewSha256, 128);
+        buffer.writeLong(previewSizeBytes);
         buffer.writeLong(startedAtMillis);
         buffer.writeVarInt(radiusBlocks);
         buffer.writeBoolean(positional);

@@ -13,6 +13,7 @@ public final class CstMusicConfig {
     public String normalizedOutputFormat = "ogg";
     public String audioBitrate = "128k";
     public int sampleRate = 44100;
+    public int previewCacheSeconds = 7;
     public boolean stereoEnabled = true;
     public boolean monoDownmix = false;
     public String ffmpegPath = "ffmpeg";

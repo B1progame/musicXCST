@@ -37,6 +37,11 @@ public final class CustomAudioEngine {
         }
     }
 
+    public static void replace(JukeboxStartPayload payload, Path audioFile) {
+        stop(new JukeboxStopPayload(payload.pos()));
+        play(payload, audioFile);
+    }
+
     public static void stop(JukeboxStopPayload payload) {
         AudioPlayer.PlayingSound sound = PLAYING.remove(payload.pos());
         if (sound != null) {

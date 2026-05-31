@@ -22,8 +22,16 @@ public final class ClientAudioCache {
         return CACHE_ROOT.resolve(safeName(musicId + "-" + sha256 + ".ogg")).normalize();
     }
 
+    public static Path previewCompletePath(String musicId, String sha256) {
+        return CACHE_ROOT.resolve(safeName(musicId + "-preview-" + sha256 + ".ogg")).normalize();
+    }
+
     public static Path tempPath(String musicId, String sha256) {
         return CACHE_ROOT.resolve(safeName(musicId + "-" + sha256 + ".part")).normalize();
+    }
+
+    public static Path previewTempPath(String musicId, String sha256) {
+        return CACHE_ROOT.resolve(safeName(musicId + "-preview-" + sha256 + ".part")).normalize();
     }
 
     public static boolean hasComplete(String musicId, String sha256, long expectedSize) {
@@ -31,9 +39,14 @@ public final class ClientAudioCache {
         return Files.isRegularFile(path) && size(path) == expectedSize && verifySha256(path, sha256);
     }
 
-    public static void writeChunk(String musicId, String sha256, long offset, byte[] data) throws IOException {
+    public static boolean hasPreviewComplete(String musicId, String sha256, long expectedSize) {
+        Path path = previewCompletePath(musicId, sha256);
+        return Files.isRegularFile(path) && size(path) == expectedSize && verifySha256(path, sha256);
+    }
+
+    public static void writeChunk(String musicId, String sha256, long offset, byte[] data, boolean preview) throws IOException {
         Files.createDirectories(CACHE_ROOT);
-        Path path = tempPath(musicId, sha256);
+        Path path = preview ? previewTempPath(musicId, sha256) : tempPath(musicId, sha256);
         if (!path.startsWith(CACHE_ROOT)) {
             throw new IOException("Cache path escaped cache root.");
         }
@@ -44,9 +57,9 @@ public final class ClientAudioCache {
         }
     }
 
-    public static Path finish(String musicId, String sha256, long expectedSize) throws IOException {
-        Path temp = tempPath(musicId, sha256);
-        Path complete = completePath(musicId, sha256);
+    public static Path finish(String musicId, String sha256, long expectedSize, boolean preview) throws IOException {
+        Path temp = preview ? previewTempPath(musicId, sha256) : tempPath(musicId, sha256);
+        Path complete = preview ? previewCompletePath(musicId, sha256) : completePath(musicId, sha256);
         if (size(temp) != expectedSize) {
             throw new IOException("Downloaded audio size does not match server metadata.");
         }
@@ -58,8 +71,12 @@ public final class ClientAudioCache {
     }
 
     public static void deleteTemp(String musicId, String sha256) {
+        deleteTemp(musicId, sha256, false);
+    }
+
+    public static void deleteTemp(String musicId, String sha256, boolean preview) {
         try {
-            Files.deleteIfExists(tempPath(musicId, sha256));
+            Files.deleteIfExists(preview ? previewTempPath(musicId, sha256) : tempPath(musicId, sha256));
         } catch (IOException exception) {
             Musicxcst.LOGGER.debug("Failed to delete partial audio cache file: {}", exception.getMessage());
         }

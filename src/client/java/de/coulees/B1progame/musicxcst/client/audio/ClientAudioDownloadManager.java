@@ -35,25 +35,36 @@ public final class ClientAudioDownloadManager {
             return;
         }
 
+        if (payload.previewSha256() != null
+                && !payload.previewSha256().isBlank()
+                && payload.previewSizeBytes() > 0L
+                && ClientAudioCache.hasPreviewComplete(payload.musicId(), payload.previewSha256(), payload.previewSizeBytes())) {
+            CustomAudioEngine.play(payload, ClientAudioCache.previewCompletePath(payload.musicId(), payload.previewSha256()));
+        }
+
         ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());
         PENDING.put(payload.musicId(), PendingPlayback.forPlayback(payload));
-        requestChunk(payload.musicId(), 0L);
+        requestChunk(payload.musicId(), 0L, false);
     }
 
     public static void handleCacheWarm(AudioCacheWarmPayload payload) {
         if (payload.sha256() == null || payload.sha256().isBlank() || payload.sizeBytes() <= 0L) {
             return;
         }
-        if (ClientAudioCache.hasComplete(payload.musicId(), payload.sha256(), payload.sizeBytes())) {
+        boolean preview = payload.preview();
+        boolean cached = preview
+                ? ClientAudioCache.hasPreviewComplete(payload.musicId(), payload.sha256(), payload.sizeBytes())
+                : ClientAudioCache.hasComplete(payload.musicId(), payload.sha256(), payload.sizeBytes());
+        if (cached) {
             return;
         }
-        if (PENDING.containsKey(payload.musicId())) {
+        if (PENDING.containsKey(pendingKey(payload.musicId(), preview))) {
             return;
         }
 
-        ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());
-        PENDING.put(payload.musicId(), PendingPlayback.forCacheWarm(payload));
-        requestChunk(payload.musicId(), 0L);
+        ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256(), preview);
+        PENDING.put(pendingKey(payload.musicId(), preview), PendingPlayback.forCacheWarm(payload));
+        requestChunk(payload.musicId(), 0L, preview);
     }
 
     public static void handleCachePrune(AudioCachePrunePayload payload) {
@@ -64,36 +75,37 @@ public final class ClientAudioDownloadManager {
     }
 
     public static void handleChunk(AudioChunkPayload payload) {
-        PendingPlayback pending = PENDING.get(payload.musicId());
+        String key = pendingKey(payload.musicId(), payload.preview());
+        PendingPlayback pending = PENDING.get(key);
         if (pending == null) {
             return;
         }
         if (!pending.sha256().equalsIgnoreCase(payload.sha256())) {
-            PENDING.remove(payload.musicId());
-            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256());
+            PENDING.remove(key);
+            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256(), payload.preview());
             showError("Blueprint CD audio checksum changed during download.");
             return;
         }
 
         try {
-            ClientAudioCache.writeChunk(payload.musicId(), payload.sha256(), payload.offset(), payload.data());
+            ClientAudioCache.writeChunk(payload.musicId(), payload.sha256(), payload.offset(), payload.data(), payload.preview());
             long nextOffset = payload.offset() + payload.data().length;
             if (!payload.last() && nextOffset < payload.totalSize()) {
                 pending.nextOffset = nextOffset;
-                requestChunk(payload.musicId(), nextOffset);
+                requestChunk(payload.musicId(), nextOffset, payload.preview());
                 return;
             }
 
-            Path cached = ClientAudioCache.finish(payload.musicId(), payload.sha256(), payload.totalSize());
-            PENDING.remove(payload.musicId());
+            Path cached = ClientAudioCache.finish(payload.musicId(), payload.sha256(), payload.totalSize(), payload.preview());
+            PENDING.remove(key);
             if (pending.start != null) {
-                CustomAudioEngine.play(pending.start, cached);
+                CustomAudioEngine.replace(pending.start, cached);
             } else {
                 Musicxcst.LOGGER.debug("Cached Blueprint CD audio '{}'.", pending.displayName);
             }
         } catch (IOException exception) {
-            PENDING.remove(payload.musicId());
-            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256());
+            PENDING.remove(key);
+            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256(), payload.preview());
             Musicxcst.LOGGER.warn("Failed to cache Blueprint CD audio '{}': {}", pending.displayName, exception.getMessage());
             showError("Failed to download Blueprint CD audio: " + exception.getMessage());
         }
@@ -103,15 +115,19 @@ public final class ClientAudioDownloadManager {
         PENDING.clear();
     }
 
-    private static void requestChunk(String musicId, long offset) {
+    private static void requestChunk(String musicId, long offset, boolean preview) {
         int chunkBytes = offset == 0L
                 ? AudioChunkDownloadManager.FIRST_CHUNK_BYTES
                 : AudioChunkDownloadManager.DEFAULT_CHUNK_BYTES;
-        ClientPlayNetworking.send(new AudioChunkRequestPayload(musicId, offset, chunkBytes));
+        ClientPlayNetworking.send(new AudioChunkRequestPayload(musicId, offset, chunkBytes, preview));
     }
 
     private static void showError(String message) {
         Musicxcst.LOGGER.warn(message);
+    }
+
+    private static String pendingKey(String musicId, boolean preview) {
+        return preview ? musicId + ":preview" : musicId;
     }
 
     private static final class PendingPlayback {

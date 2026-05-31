@@ -169,10 +169,14 @@ public final class MusicLibraryService {
         entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
+        entry.status = MusicStatus.ACTIVE;
+        NormalizedAudio previewAudio = createPreviewAudio(player, entry);
+        entry.previewRelativePath = previewAudio.safeRelativePath();
+        entry.previewSizeBytes = previewAudio.sizeBytes();
+        entry.previewSha256 = previewAudio.sha256();
         entry.normalizedFormat = config.normalizedOutputFormat;
         entry.normalizedSampleRate = config.sampleRate;
         entry.normalizedBitrate = config.audioBitrate;
-        entry.status = MusicStatus.ACTIVE;
         entry.hexColor = normalizedColor;
         entry.schemaVersion = Musicxcst.DISC_SCHEMA_VERSION;
         entries.put(entry.musicId, entry);
@@ -191,6 +195,7 @@ public final class MusicLibraryService {
         }
 
         syncPlayerInventory(player);
+        warmPreviewCacheForAllPlayers(entry);
         return "Created Blueprint CD '" + sanitizedName + "' with music ID " + entry.musicId + ".";
     }
 
@@ -420,11 +425,11 @@ public final class MusicLibraryService {
             return;
         }
 
-        Path file = resolvePlayableOgg(entry);
+        Path file = request.preview() ? resolvePreviewOgg(entry) : resolvePlayableOgg(entry);
         long totalSize = safeFileSize(file);
         long offset = Math.max(0L, request.offset());
         if (offset >= totalSize) {
-            ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, totalSize, totalSize, checksumForPlayback(entry, file), new byte[0], true));
+            ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, totalSize, totalSize, checksumForPlayback(entry, file, request.preview()), new byte[0], true, request.preview()));
             return;
         }
 
@@ -440,7 +445,7 @@ public final class MusicLibraryService {
         }
 
         boolean last = offset + data.length >= totalSize;
-        ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, offset, totalSize, checksumForPlayback(entry, file), data, last));
+        ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, offset, totalSize, checksumForPlayback(entry, file, request.preview()), data, last, request.preview()));
     }
 
     private void warmCachesAutomatically(MinecraftServer server) {
@@ -488,11 +493,27 @@ public final class MusicLibraryService {
         }
         String validCacheKeys = candidates.stream()
                 .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
-                .map(this::cacheKey)
+                .map(this::cacheKeys)
                 .filter(key -> !key.isBlank())
                 .reduce((left, right) -> left + "\n" + right)
                 .orElse("");
         ServerPlayNetworking.send(player, new AudioCachePrunePayload(validCacheKeys));
+    }
+
+    private void warmPreviewCacheForAllPlayers(MusicEntry entry) {
+        AudioCacheWarmPayload payload;
+        try {
+            payload = previewCacheWarmPayload(entry);
+        } catch (IllegalArgumentException exception) {
+            Musicxcst.LOGGER.debug("Skipping preview cache warm for '{}': {}", entry.musicId, exception.getMessage());
+            return;
+        }
+
+        for (ServerPlayer target : server.getPlayerList().getPlayers()) {
+            if (ServerPlayNetworking.canSend(target, AudioCacheWarmPayload.TYPE)) {
+                ServerPlayNetworking.send(target, payload);
+            }
+        }
     }
 
     private List<MusicEntry> activeEntries() {
@@ -507,10 +528,32 @@ public final class MusicLibraryService {
         }
         try {
             AudioCacheWarmPayload payload = cacheWarmPayload(entry);
-            return (payload.musicId() + "-" + payload.sha256()).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+            return cacheKey(payload.musicId(), payload.sha256(), payload.preview());
         } catch (IllegalArgumentException exception) {
             return "";
         }
+    }
+
+    private String cacheKeys(MusicEntry entry) {
+        String full = cacheKey(entry);
+        String preview = "";
+        try {
+            AudioCacheWarmPayload payload = previewCacheWarmPayload(entry);
+            preview = cacheKey(payload.musicId(), payload.sha256(), true);
+        } catch (IllegalArgumentException ignored) {
+        }
+        if (full.isBlank()) {
+            return preview;
+        }
+        if (preview.isBlank()) {
+            return full;
+        }
+        return full + "\n" + preview;
+    }
+
+    private String cacheKey(String musicId, String sha256, boolean preview) {
+        String suffix = preview ? "-preview-" : "-";
+        return (musicId + suffix + sha256).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
     }
 
     private String describeMinutes(int minutes) {
@@ -609,6 +652,21 @@ public final class MusicLibraryService {
         return file;
     }
 
+    private Path resolvePreviewOgg(MusicEntry entry) {
+        if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
+            throw new IllegalArgumentException("Music entry is not active.");
+        }
+        if (entry.previewRelativePath == null || entry.previewRelativePath.isBlank()) {
+            throw new IllegalArgumentException("Preview audio is missing.");
+        }
+
+        Path file = normalizedRoot.resolve(entry.previewRelativePath).normalize();
+        if (!file.startsWith(normalizedRoot) || !Files.isRegularFile(file)) {
+            throw new IllegalArgumentException("Preview audio file is missing.");
+        }
+        return file;
+    }
+
     private JukeboxStartPayload startPayload(MusicEntry entry, BlockPos pos, boolean positional) {
         return startPayload(entry, pos, positional, System.currentTimeMillis());
     }
@@ -619,8 +677,10 @@ public final class MusicLibraryService {
                 pos,
                 entry.musicId,
                 entry.displayName,
-                checksumForPlayback(entry, file),
+                checksumForPlayback(entry, file, false),
                 safeFileSize(file),
+                previewChecksumForPlayback(entry),
+                entry.previewSizeBytes,
                 startedAtMillis,
                 config.playbackRadiusBlocks,
                 positional,
@@ -637,16 +697,42 @@ public final class MusicLibraryService {
         return new AudioCacheWarmPayload(
                 entry.musicId,
                 entry.displayName,
-                checksumForPlayback(entry, file),
-                safeFileSize(file)
+                checksumForPlayback(entry, file, false),
+                safeFileSize(file),
+                false
         );
     }
 
-    private String checksumForPlayback(MusicEntry entry, Path file) {
-        if (entry.normalizedSha256 != null && !entry.normalizedSha256.isBlank()) {
+    private AudioCacheWarmPayload previewCacheWarmPayload(MusicEntry entry) {
+        Path file = resolvePreviewOgg(entry);
+        return new AudioCacheWarmPayload(
+                entry.musicId,
+                entry.displayName,
+                checksumForPlayback(entry, file, true),
+                safeFileSize(file),
+                true
+        );
+    }
+
+    private String checksumForPlayback(MusicEntry entry, Path file, boolean preview) {
+        if (preview && entry.previewSha256 != null && !entry.previewSha256.isBlank()) {
+            return entry.previewSha256;
+        }
+        if (!preview && entry.normalizedSha256 != null && !entry.normalizedSha256.isBlank()) {
             return entry.normalizedSha256;
         }
         return sha256(file);
+    }
+
+    private String previewChecksumForPlayback(MusicEntry entry) {
+        if (entry.previewRelativePath == null || entry.previewRelativePath.isBlank()) {
+            return "";
+        }
+        try {
+            return checksumForPlayback(entry, resolvePreviewOgg(entry), true);
+        } catch (IllegalArgumentException exception) {
+            return "";
+        }
     }
 
     private MusicEntry requireEntry(String musicId) {
@@ -848,6 +934,53 @@ public final class MusicLibraryService {
             return new NormalizedAudio(normalizedRoot.relativize(output).toString().replace('\\', '/'), sizeBytes, sha256(output));
         } catch (IOException exception) {
             throw new IllegalArgumentException("Failed to store normalized audio.", exception);
+        }
+    }
+
+    private NormalizedAudio createPreviewAudio(ServerPlayer player, MusicEntry entry) {
+        Path source = resolvePlayableOgg(entry);
+        int previewSeconds = Math.max(1, Math.min(60, config.previewCacheSeconds));
+        Path folder = normalizedRoot.resolve(entry.musicId.substring(0, 2)).normalize();
+        Path output = folder.resolve(entry.musicId + "-preview.ogg").normalize();
+        if (!output.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("Preview audio output escapes the server storage root.");
+        }
+
+        String ffmpeg = resolveFfmpegExecutable();
+        List<String> command = new ArrayList<>();
+        command.add(ffmpeg);
+        command.add("-y");
+        command.add("-i");
+        command.add(source.toString());
+        command.add("-t");
+        command.add(Integer.toString(previewSeconds));
+        command.add("-vn");
+        command.add("-map");
+        command.add("a:0");
+        command.add("-c:a");
+        command.add("libvorbis");
+        command.add("-b:a");
+        command.add(config.audioBitrate == null || config.audioBitrate.isBlank() ? "128k" : config.audioBitrate);
+        command.add("-ar");
+        command.add(Integer.toString(config.sampleRate <= 0 ? 44100 : config.sampleRate));
+        command.add("-ac");
+        command.add(config.monoDownmix ? "1" : (config.stereoEnabled ? "2" : "1"));
+        command.add(output.toString());
+
+        try {
+            Files.createDirectories(folder);
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exit = process.waitFor();
+            if (exit != 0) {
+                throw new IllegalArgumentException("FFmpeg failed to create preview audio. " + safeProcessLog(log));
+            }
+            return new NormalizedAudio(normalizedRoot.relativize(output).toString().replace('\\', '/'), safeFileSize(output), sha256(output));
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to create preview audio.", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalArgumentException("Preview audio generation was interrupted.", exception);
         }
     }
 

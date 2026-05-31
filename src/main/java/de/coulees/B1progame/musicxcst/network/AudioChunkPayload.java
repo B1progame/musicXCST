@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record AudioChunkPayload(String musicId, long offset, long totalSize, String sha256, byte[] data, boolean last) implements CustomPacketPayload {
+public record AudioChunkPayload(String musicId, long offset, long totalSize, String sha256, byte[] data, boolean last, boolean preview) implements CustomPacketPayload {
     public static final Type<AudioChunkPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "audio_chunk"));
     public static final StreamCodec<RegistryFriendlyByteBuf, AudioChunkPayload> CODEC = StreamCodec.ofMember(AudioChunkPayload::write, AudioChunkPayload::read);
 
@@ -17,6 +17,7 @@ public record AudioChunkPayload(String musicId, long offset, long totalSize, Str
                 buffer.readLong(),
                 buffer.readUtf(128),
                 buffer.readByteArray(256 * 1024),
+                buffer.readBoolean(),
                 buffer.readBoolean()
         );
     }
@@ -28,6 +29,7 @@ public record AudioChunkPayload(String musicId, long offset, long totalSize, Str
         buffer.writeUtf(sha256, 128);
         buffer.writeByteArray(data);
         buffer.writeBoolean(last);
+        buffer.writeBoolean(preview);
     }
 
     @Override

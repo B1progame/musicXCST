@@ -6,7 +6,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record AudioCacheWarmPayload(String musicId, String displayName, String sha256, long sizeBytes) implements CustomPacketPayload {
+public record AudioCacheWarmPayload(String musicId, String displayName, String sha256, long sizeBytes, boolean preview) implements CustomPacketPayload {
     public static final Type<AudioCacheWarmPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "audio_cache_warm"));
     public static final StreamCodec<RegistryFriendlyByteBuf, AudioCacheWarmPayload> CODEC = StreamCodec.ofMember(AudioCacheWarmPayload::write, AudioCacheWarmPayload::read);
 
@@ -15,7 +15,8 @@ public record AudioCacheWarmPayload(String musicId, String displayName, String s
                 buffer.readUtf(128),
                 buffer.readUtf(128),
                 buffer.readUtf(128),
-                buffer.readLong()
+                buffer.readLong(),
+                buffer.readBoolean()
         );
     }
 
@@ -24,6 +25,7 @@ public record AudioCacheWarmPayload(String musicId, String displayName, String s
         buffer.writeUtf(displayName, 128);
         buffer.writeUtf(sha256, 128);
         buffer.writeLong(sizeBytes);
+        buffer.writeBoolean(preview);
     }
 
     @Override

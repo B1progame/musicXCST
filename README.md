@@ -79,11 +79,12 @@ The mod does not create one Minecraft sound event per uploaded song and does not
 Playback flow:
 
 1. A jukebox or admin command starts a playback session.
-2. The server sends metadata: music ID, checksum, size, source position, radius, and start time.
+2. The server sends metadata: music ID, checksum, size, preview checksum, source position, radius, and start time.
 3. The client checks `musicxcst-cache`.
-4. Missing audio is requested from the server in chunks. Playback requests start with a small first chunk, then continue with larger chunks for better responsiveness.
-5. The client verifies SHA-256 before playback.
-6. The client decodes OGG with STB Vorbis and plays through OpenAL.
+4. If the full song is not cached yet, the client can immediately play the cached preview while downloading the full song.
+5. Missing audio is requested from the server in chunks. Playback requests start with a small first chunk, then continue with larger chunks for better responsiveness.
+6. The client verifies SHA-256 before playback.
+7. The client decodes OGG with STB Vorbis and plays through OpenAL.
 
 Players can run `/cstmusic download all` to pre-cache every active server song. `/cstmusic download auto 30m`, `/cstmusic download auto 1h`, and `/cstmusic download auto 1h30m` keep the local cache warm at that interval and prune deleted or missing songs from the local cache. `/cstmusic download off` disables automatic downloads for that player.
 
@@ -167,7 +168,7 @@ Files:
 - normalized audio: `<world>/music-normalized/`
 - client cache: `<game directory>/musicxcst-cache/`
 
-Important config fields include max file size, per-player quota, total server quota, allowed extensions, import folder, normalized output format, bitrate, sample rate, stereo/mono settings, playback radius, range interval, fade timings, FFmpeg path, client cache warming, found-disc playback rules, soft delete, and debug logging.
+Important config fields include max file size, per-player quota, total server quota, allowed extensions, import folder, normalized output format, bitrate, sample rate, stereo/mono settings, preview cache seconds, playback radius, range interval, fade timings, FFmpeg path, client cache warming, found-disc playback rules, soft delete, and debug logging.
 
 ## Ownership
 

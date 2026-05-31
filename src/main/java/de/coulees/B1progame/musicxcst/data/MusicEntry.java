@@ -13,6 +13,9 @@ public final class MusicEntry {
     public String normalizedRelativePath;
     public long normalizedSizeBytes;
     public String normalizedSha256;
+    public String previewRelativePath;
+    public long previewSizeBytes;
+    public String previewSha256;
     public String normalizedFormat;
     public int normalizedSampleRate;
     public String normalizedBitrate;
