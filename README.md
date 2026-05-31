@@ -39,6 +39,7 @@ Player commands:
 - `/cstmusic info <musicId>`
 - `/cstmusic delete <musicId>`
 - `/cstmusic storage`
+- `/cstmusic downloadall`
 
 Admin commands:
 
@@ -78,9 +79,11 @@ Playback flow:
 1. A jukebox or admin command starts a playback session.
 2. The server sends metadata: music ID, checksum, size, source position, radius, and start time.
 3. The client checks `musicxcst-cache`.
-4. Missing audio is requested from the server in 128 KiB chunks.
+4. Missing audio is requested from the server in chunks. Playback requests start with a small first chunk, then continue with larger chunks for better responsiveness.
 5. The client verifies SHA-256 before playback.
 6. The client decodes OGG with STB Vorbis and plays through OpenAL.
+
+Players can run `/cstmusic downloadall` to pre-cache every active song they own. Servers also pre-warm client caches every 30 minutes by default with `cacheWarmMode: "auto"` and `cacheWarmIntervalMinutes: 30`; set `cacheWarmMode` to `"off"` to disable automatic cache warming.
 
 Jukebox playback is positional. Admin test playback uses non-positional stereo playback for the requesting admin.
 
@@ -162,7 +165,7 @@ Files:
 - normalized audio: `<world>/music-normalized/`
 - client cache: `<game directory>/musicxcst-cache/`
 
-Important config fields include max file size, per-player quota, total server quota, allowed extensions, import folder, normalized output format, bitrate, sample rate, stereo/mono settings, playback radius, range interval, fade timings, FFmpeg path, found-disc playback rules, soft delete, and debug logging.
+Important config fields include max file size, per-player quota, total server quota, allowed extensions, import folder, normalized output format, bitrate, sample rate, stereo/mono settings, playback radius, range interval, fade timings, FFmpeg path, client cache warming, found-disc playback rules, soft delete, and debug logging.
 
 ## Ownership
 

@@ -10,10 +10,12 @@ import de.coulees.B1progame.musicxcst.data.MusicIndexFile;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
 import de.coulees.B1progame.musicxcst.init.ModItems;
+import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
+import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
 import de.coulees.B1progame.musicxcst.service.audio.BundledFfmpegResolver;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackRangeTracker;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackSessionManager;
@@ -34,6 +36,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,6 +56,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 public final class MusicLibraryService {
@@ -63,6 +67,7 @@ public final class MusicLibraryService {
     private final PlaybackRangeTracker playbackRange = new PlaybackRangeTracker();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
+    private long nextAutomaticCacheWarmTick;
     private Path configPath;
     private Path indexPath;
     private Path importRoot;
@@ -99,6 +104,8 @@ public final class MusicLibraryService {
         if (server.getTickCount() % 100 == 0) {
             syncAllPlayers();
         }
+
+        warmCachesAutomatically(server);
     }
 
     public String reload() {
@@ -129,10 +136,7 @@ public final class MusicLibraryService {
 
         ItemStack selected = player.getInventory().getSelectedItem();
         if (selected.getItem() != ModItems.BLUEPRINT_CD) {
-            throw new IllegalArgumentException("Hold a blank Blueprint CD in your selected slot first.");
-        }
-        if (DiscData.fromStack(selected) != null) {
-            throw new IllegalArgumentException("The selected Blueprint CD is already written.");
+            throw new IllegalArgumentException("Hold a Blueprint CD in your selected slot first.");
         }
 
         String musicId = UUID.randomUUID().toString().replace("-", "");
@@ -141,7 +145,7 @@ public final class MusicLibraryService {
         long fileSize = safeFileSize(resolved);
         validateFile(resolved, fileSize);
         validateQuota(player.getUUID(), fileSize);
-        NormalizedAudio normalizedAudio = normalizeAudio(resolved, musicId);
+        NormalizedAudio normalizedAudio = normalizeAudio(player, resolved, musicId, fileSize);
 
         MusicEntry entry = new MusicEntry();
         entry.musicId = musicId;
@@ -256,6 +260,14 @@ public final class MusicLibraryService {
         return "Playing '" + entry.displayName + "' for " + player.getName().getString() + ".";
     }
 
+    public String warmPlayerCache(ServerPlayer player) {
+        ensureServer();
+        int sent = sendCacheWarmPayloads(player, listEntriesForPlayer(player));
+        return sent == 0
+                ? "No active music entries are available to download."
+                : "Started caching " + sent + " song(s).";
+    }
+
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
         if (!(level instanceof ServerLevel serverLevel) || stack.getItem() != ModItems.BLUEPRINT_CD) {
             return;
@@ -307,28 +319,38 @@ public final class MusicLibraryService {
         }
     }
 
-    public boolean rejectInvalidJukeboxInsert(Player player, ItemStack stack) {
+    public boolean rejectBlueprintJukeboxInsert(Player player, ItemStack stack) {
         if (stack.getItem() != ModItems.BLUEPRINT_CD) {
             return false;
         }
 
         DiscData data = DiscData.fromStack(stack);
         if (data == null) {
-            return false;
+            player.sendOverlayMessage(Component.literal("Blank Blueprint CDs cannot be inserted into jukeboxes."));
+            return true;
         }
 
         refreshStatuses();
         MusicEntry entry = entries.get(data.musicId);
         String status = entry == null ? MusicStatus.INVALID : entry.status;
-        if (!MusicStatus.isInvalidLike(status)) {
+        if (MusicStatus.ACTIVE.equals(status)) {
+            data.status = status;
+            data.hexColor = entry.hexColor;
+            data.displayName = entry.displayName;
+            DiscData.writeToStack(stack, data);
             return false;
         }
 
-        data.status = status;
-        data.hexColor = "#C93A3A";
-        data.displayName = entry == null ? data.displayName : entry.displayName;
-        DiscData.writeToStack(stack, data);
-        player.displayClientMessage(Component.literal("This Blueprint CD is invalid and cannot be inserted."), true);
+        if (MusicStatus.isInvalidLike(status)) {
+            data.status = status;
+            data.hexColor = "#C93A3A";
+            data.displayName = entry == null ? data.displayName : entry.displayName;
+            DiscData.writeToStack(stack, data);
+            player.sendOverlayMessage(Component.literal("This Blueprint CD is invalid and cannot be inserted."));
+            return true;
+        }
+
+        player.sendOverlayMessage(Component.literal("This Blueprint CD is still converting. Try again when it is ready."));
         return true;
     }
 
@@ -359,7 +381,7 @@ public final class MusicLibraryService {
             return;
         }
 
-        int maxBytes = Math.max(1, Math.min(request.maxBytes(), 128 * 1024));
+        int maxBytes = new AudioChunkDownloadManager().clampRequestedBytes(request.maxBytes());
         int count = (int) Math.min(maxBytes, totalSize - offset);
         byte[] data;
         try (InputStream input = Files.newInputStream(file)) {
@@ -372,6 +394,50 @@ public final class MusicLibraryService {
 
         boolean last = offset + data.length >= totalSize;
         ServerPlayNetworking.send(player, new AudioChunkPayload(entry.musicId, offset, totalSize, checksumForPlayback(entry, file), data, last));
+    }
+
+    private void warmCachesAutomatically(MinecraftServer server) {
+        if (!"auto".equalsIgnoreCase(config.cacheWarmMode)) {
+            return;
+        }
+
+        int intervalMinutes = Math.max(1, config.cacheWarmIntervalMinutes);
+        long intervalTicks = intervalMinutes * 60L * 20L;
+        if (nextAutomaticCacheWarmTick == 0L) {
+            nextAutomaticCacheWarmTick = server.getTickCount() + intervalTicks;
+            return;
+        }
+        if (server.getTickCount() < nextAutomaticCacheWarmTick) {
+            return;
+        }
+
+        nextAutomaticCacheWarmTick = server.getTickCount() + intervalTicks;
+        List<MusicEntry> activeEntries = entries.values().stream()
+                .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
+                .toList();
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            sendCacheWarmPayloads(player, activeEntries);
+        }
+    }
+
+    private int sendCacheWarmPayloads(ServerPlayer player, List<MusicEntry> candidates) {
+        if (!ServerPlayNetworking.canSend(player, AudioCacheWarmPayload.TYPE)) {
+            return 0;
+        }
+
+        int sent = 0;
+        for (MusicEntry entry : candidates) {
+            if (!MusicStatus.ACTIVE.equals(entry.status)) {
+                continue;
+            }
+            try {
+                ServerPlayNetworking.send(player, cacheWarmPayload(entry));
+                sent++;
+            } catch (IllegalArgumentException exception) {
+                Musicxcst.LOGGER.debug("Skipping cache warm for '{}': {}", entry.musicId, exception.getMessage());
+            }
+        }
+        return sent;
     }
 
     public void stopJukeboxPlayback(Level level, BlockPos pos) {
@@ -476,6 +542,16 @@ public final class MusicLibraryService {
                 startedAtMillis,
                 config.playbackRadiusBlocks,
                 positional
+        );
+    }
+
+    private AudioCacheWarmPayload cacheWarmPayload(MusicEntry entry) {
+        Path file = resolvePlayableOgg(entry);
+        return new AudioCacheWarmPayload(
+                entry.musicId,
+                entry.displayName,
+                checksumForPlayback(entry, file),
+                safeFileSize(file)
         );
     }
 
@@ -655,7 +731,7 @@ public final class MusicLibraryService {
         }
     }
 
-    private NormalizedAudio normalizeAudio(Path source, String musicId) {
+    private NormalizedAudio normalizeAudio(ServerPlayer player, Path source, String musicId, long sourceSizeBytes) {
         String outputFormat = config.normalizedOutputFormat == null || config.normalizedOutputFormat.isBlank()
                 ? "ogg"
                 : config.normalizedOutputFormat.toLowerCase(Locale.ROOT);
@@ -676,9 +752,10 @@ public final class MusicLibraryService {
         try {
             Files.createDirectories(folder);
             if ("ogg".equals(extension(source.getFileName().toString()))) {
+                player.sendOverlayMessage(Component.literal("Blueprint CD audio is already ready."));
                 Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
             } else {
-                runFfmpegNormalization(source, output);
+                runFfmpegNormalization(player, source, output, sourceSizeBytes);
             }
             long sizeBytes = safeFileSize(output);
             return new NormalizedAudio(normalizedRoot.relativize(output).toString().replace('\\', '/'), sizeBytes, sha256(output));
@@ -687,7 +764,7 @@ public final class MusicLibraryService {
         }
     }
 
-    private void runFfmpegNormalization(Path source, Path output) {
+    private void runFfmpegNormalization(ServerPlayer player, Path source, Path output, long sourceSizeBytes) {
         String ffmpeg = resolveFfmpegExecutable();
 
         List<String> command = new ArrayList<>();
@@ -710,17 +787,42 @@ public final class MusicLibraryService {
 
         try {
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            int exit = process.waitFor();
-            if (exit != 0) {
-                throw new IllegalArgumentException("FFmpeg failed to normalize audio. " + safeProcessLog(log));
+            StringBuilder log = new StringBuilder();
+            Thread logReader = new Thread(() -> {
+                try {
+                    log.append(new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+                } catch (IOException exception) {
+                    log.append(exception.getMessage());
+                }
+            }, "musicxcst-ffmpeg-log");
+            logReader.setDaemon(true);
+            logReader.start();
+
+            int estimatedSeconds = estimatedConversionSeconds(sourceSizeBytes);
+            long startedAtMillis = System.currentTimeMillis();
+            while (!process.waitFor(1L, TimeUnit.SECONDS)) {
+                int elapsedSeconds = (int) Math.max(1L, (System.currentTimeMillis() - startedAtMillis) / 1000L);
+                int remainingSeconds = Math.max(1, estimatedSeconds - elapsedSeconds);
+                player.sendOverlayMessage(Component.literal("Converting Blueprint CD audio... about " + remainingSeconds + "s left."));
             }
+
+            int exit = process.exitValue();
+            logReader.join(1000L);
+            if (exit != 0) {
+                throw new IllegalArgumentException("FFmpeg failed to normalize audio. " + safeProcessLog(log.toString()));
+            }
+            player.sendOverlayMessage(Component.literal("Blueprint CD audio is ready."));
         } catch (IOException exception) {
             throw new IllegalArgumentException("Failed to run FFmpeg. Check the configured ffmpegPath.", exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalArgumentException("FFmpeg normalization was interrupted.", exception);
         }
+    }
+
+    private int estimatedConversionSeconds(long sourceSizeBytes) {
+        long megabytes = Math.max(1L, (sourceSizeBytes + 1024L * 1024L - 1L) / (1024L * 1024L));
+        return (int) Math.max(5L, Math.min(120L, 6L + megabytes * 2L));
     }
 
     private String resolveFfmpegExecutable() {

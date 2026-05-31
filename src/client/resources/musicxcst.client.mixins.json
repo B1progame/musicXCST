@@ -4,6 +4,7 @@
   "package": "de.coulees.B1progame.musicxcst.mixin.client",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "SoundManagerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

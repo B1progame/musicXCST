@@ -54,7 +54,14 @@ public final class CustomAudioEngine {
                 continue;
             }
 
+            sound.resumeIfPaused();
             updateDistanceGain(client, sound);
+        }
+    }
+
+    public static void resumeAll() {
+        for (AudioPlayer.PlayingSound sound : PLAYING.values()) {
+            sound.resumeIfPaused();
         }
     }
 

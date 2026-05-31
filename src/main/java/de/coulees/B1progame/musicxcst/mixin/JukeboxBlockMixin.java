@@ -18,8 +18,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(JukeboxBlock.class)
 public abstract class JukeboxBlockMixin {
     @Inject(method = "useItemOn", at = @At("HEAD"), cancellable = true)
-    private void musicxcst$rejectInvalidBlueprintCd(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<InteractionResult> cir) {
-        if (!level.isClientSide() && Musicxcst.LIBRARY.rejectInvalidJukeboxInsert(player, stack)) {
+    private void musicxcst$rejectBlueprintCd(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit, CallbackInfoReturnable<InteractionResult> cir) {
+        if (!level.isClientSide() && Musicxcst.LIBRARY.rejectBlueprintJukeboxInsert(player, stack)) {
             cir.setReturnValue(InteractionResult.SUCCESS);
         }
     }

@@ -53,6 +53,8 @@ public final class CstMusicCommands {
                                 .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
                 .then(Commands.literal("storage")
                         .executes(ctx -> storage(ctx.getSource())))
+                .then(Commands.literal("downloadall")
+                        .executes(ctx -> downloadAll(ctx.getSource())))
                 .then(Commands.literal("admin")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.literal("storage").executes(ctx -> adminStorage(ctx.getSource())))
@@ -84,6 +86,7 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("/cstmusic info <musicId>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic delete <musicId>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic storage"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic downloadall"), false);
         if (isAdmin(source)) {
             source.sendSuccess(() -> Component.literal("/cstmusic admin storage"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin list [page]"), false);
@@ -181,6 +184,13 @@ public final class CstMusicCommands {
         if (isAdmin(source)) {
             source.sendSuccess(() -> Component.literal("Server storage: " + Musicxcst.LIBRARY.getServerStorage().describe()), false);
         }
+        return 1;
+    }
+
+    private static int downloadAll(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        String result = Musicxcst.LIBRARY.warmPlayerCache(player);
+        source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }
 

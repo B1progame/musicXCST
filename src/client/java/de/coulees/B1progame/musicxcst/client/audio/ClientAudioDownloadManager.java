@@ -1,9 +1,11 @@
 package de.coulees.B1progame.musicxcst.client.audio;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
+import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 
 import java.io.IOException;
@@ -12,7 +14,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class ClientAudioDownloadManager {
-    private static final int CHUNK_SIZE = 128 * 1024;
     private static final Map<String, PendingPlayback> PENDING = new HashMap<>();
 
     private ClientAudioDownloadManager() {
@@ -31,7 +32,23 @@ public final class ClientAudioDownloadManager {
         }
 
         ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());
-        PENDING.put(payload.musicId(), new PendingPlayback(payload, 0L));
+        PENDING.put(payload.musicId(), PendingPlayback.forPlayback(payload));
+        requestChunk(payload.musicId(), 0L);
+    }
+
+    public static void handleCacheWarm(AudioCacheWarmPayload payload) {
+        if (payload.sha256() == null || payload.sha256().isBlank() || payload.sizeBytes() <= 0L) {
+            return;
+        }
+        if (ClientAudioCache.hasComplete(payload.musicId(), payload.sha256(), payload.sizeBytes())) {
+            return;
+        }
+        if (PENDING.containsKey(payload.musicId())) {
+            return;
+        }
+
+        ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());
+        PENDING.put(payload.musicId(), PendingPlayback.forCacheWarm(payload));
         requestChunk(payload.musicId(), 0L);
     }
 
@@ -40,9 +57,9 @@ public final class ClientAudioDownloadManager {
         if (pending == null) {
             return;
         }
-        if (!pending.start.sha256().equalsIgnoreCase(payload.sha256())) {
+        if (!pending.sha256().equalsIgnoreCase(payload.sha256())) {
             PENDING.remove(payload.musicId());
-            ClientAudioCache.deleteTemp(payload.musicId(), pending.start.sha256());
+            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256());
             showError("Blueprint CD audio checksum changed during download.");
             return;
         }
@@ -58,11 +75,15 @@ public final class ClientAudioDownloadManager {
 
             Path cached = ClientAudioCache.finish(payload.musicId(), payload.sha256(), payload.totalSize());
             PENDING.remove(payload.musicId());
-            CustomAudioEngine.play(pending.start, cached);
+            if (pending.start != null) {
+                CustomAudioEngine.play(pending.start, cached);
+            } else {
+                Musicxcst.LOGGER.debug("Cached Blueprint CD audio '{}'.", pending.displayName);
+            }
         } catch (IOException exception) {
             PENDING.remove(payload.musicId());
-            ClientAudioCache.deleteTemp(payload.musicId(), pending.start.sha256());
-            Musicxcst.LOGGER.warn("Failed to cache Blueprint CD audio '{}': {}", pending.start.displayName(), exception.getMessage());
+            ClientAudioCache.deleteTemp(payload.musicId(), pending.sha256());
+            Musicxcst.LOGGER.warn("Failed to cache Blueprint CD audio '{}': {}", pending.displayName, exception.getMessage());
             showError("Failed to download Blueprint CD audio: " + exception.getMessage());
         }
     }
@@ -72,7 +93,10 @@ public final class ClientAudioDownloadManager {
     }
 
     private static void requestChunk(String musicId, long offset) {
-        ClientPlayNetworking.send(new AudioChunkRequestPayload(musicId, offset, CHUNK_SIZE));
+        int chunkBytes = offset == 0L
+                ? AudioChunkDownloadManager.FIRST_CHUNK_BYTES
+                : AudioChunkDownloadManager.DEFAULT_CHUNK_BYTES;
+        ClientPlayNetworking.send(new AudioChunkRequestPayload(musicId, offset, chunkBytes));
     }
 
     private static void showError(String message) {
@@ -81,11 +105,27 @@ public final class ClientAudioDownloadManager {
 
     private static final class PendingPlayback {
         private final JukeboxStartPayload start;
+        private final String sha256;
+        private final String displayName;
         private long nextOffset;
 
-        private PendingPlayback(JukeboxStartPayload start, long nextOffset) {
+        private PendingPlayback(JukeboxStartPayload start, String sha256, String displayName, long nextOffset) {
             this.start = start;
+            this.sha256 = sha256;
+            this.displayName = displayName;
             this.nextOffset = nextOffset;
+        }
+
+        private static PendingPlayback forPlayback(JukeboxStartPayload start) {
+            return new PendingPlayback(start, start.sha256(), start.displayName(), 0L);
+        }
+
+        private static PendingPlayback forCacheWarm(AudioCacheWarmPayload payload) {
+            return new PendingPlayback(null, payload.sha256(), payload.displayName(), 0L);
+        }
+
+        private String sha256() {
+            return sha256;
         }
     }
 }

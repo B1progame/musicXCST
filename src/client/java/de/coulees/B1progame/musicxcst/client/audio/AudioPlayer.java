@@ -63,6 +63,12 @@ public final class AudioPlayer {
             return state == AL10.AL_PLAYING || state == AL10.AL_PAUSED;
         }
 
+        public void resumeIfPaused() {
+            if (AL10.alGetSourcei(source, AL10.AL_SOURCE_STATE) == AL10.AL_PAUSED) {
+                AL10.alSourcePlay(source);
+            }
+        }
+
         @Override
         public void close() {
             AL10.alSourceStop(source);
