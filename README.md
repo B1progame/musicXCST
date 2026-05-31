@@ -39,7 +39,9 @@ Player commands:
 - `/cstmusic info <musicId>`
 - `/cstmusic delete <musicId>`
 - `/cstmusic storage`
-- `/cstmusic downloadall`
+- `/cstmusic download all`
+- `/cstmusic download auto <30m|1h|1h30m>`
+- `/cstmusic download off`
 
 Admin commands:
 
@@ -83,7 +85,7 @@ Playback flow:
 5. The client verifies SHA-256 before playback.
 6. The client decodes OGG with STB Vorbis and plays through OpenAL.
 
-Players can run `/cstmusic downloadall` to pre-cache every active song they own. Servers also pre-warm client caches every 30 minutes by default with `cacheWarmMode: "auto"` and `cacheWarmIntervalMinutes: 30`; set `cacheWarmMode` to `"off"` to disable automatic cache warming.
+Players can run `/cstmusic download all` to pre-cache every active server song. `/cstmusic download auto 30m`, `/cstmusic download auto 1h`, and `/cstmusic download auto 1h30m` keep the local cache warm at that interval and prune deleted or missing songs from the local cache. `/cstmusic download off` disables automatic downloads for that player.
 
 Jukebox playback is positional. Admin test playback uses non-positional stereo playback for the requesting admin.
 

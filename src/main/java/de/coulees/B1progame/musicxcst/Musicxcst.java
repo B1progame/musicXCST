@@ -5,6 +5,7 @@ import de.coulees.B1progame.musicxcst.init.ModBlocks;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.init.ModSounds;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
+import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
@@ -35,6 +36,7 @@ public final class Musicxcst implements ModInitializer {
         PayloadTypeRegistry.clientboundPlay().register(JukeboxStartPayload.TYPE, JukeboxStartPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(JukeboxStopPayload.TYPE, JukeboxStopPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(JukeboxSettingsOpenPayload.TYPE, JukeboxSettingsOpenPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(AudioCachePrunePayload.TYPE, AudioCachePrunePayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(AudioCacheWarmPayload.TYPE, AudioCacheWarmPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().registerLarge(AudioChunkPayload.TYPE, AudioChunkPayload.CODEC, 256 * 1024);
         PayloadTypeRegistry.serverboundPlay().register(AudioChunkRequestPayload.TYPE, AudioChunkRequestPayload.CODEC);

@@ -2,6 +2,7 @@ package de.coulees.B1progame.musicxcst.client.audio;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
+import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
@@ -11,6 +12,9 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.Map;
 
 public final class ClientAudioDownloadManager {
@@ -50,6 +54,13 @@ public final class ClientAudioDownloadManager {
         ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());
         PENDING.put(payload.musicId(), PendingPlayback.forCacheWarm(payload));
         requestChunk(payload.musicId(), 0L);
+    }
+
+    public static void handleCachePrune(AudioCachePrunePayload payload) {
+        Set<String> validCacheKeys = Arrays.stream(payload.validCacheKeys().split("\n"))
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toSet());
+        ClientAudioCache.pruneExcept(validCacheKeys);
     }
 
     public static void handleChunk(AudioChunkPayload payload) {

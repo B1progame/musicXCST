@@ -11,6 +11,7 @@ import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
+import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
@@ -69,9 +70,10 @@ public final class MusicLibraryService {
     private final PlaybackSessionManager playbackSessions = new PlaybackSessionManager();
     private final PlaybackRangeTracker playbackRange = new PlaybackRangeTracker();
     private final Map<BlockPos, Boolean> jukeboxLooping = new LinkedHashMap<>();
+    private final Map<UUID, Long> playerAutoDownloadIntervals = new LinkedHashMap<>();
+    private final Map<UUID, Long> nextPlayerAutoDownloadTick = new LinkedHashMap<>();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
-    private long nextAutomaticCacheWarmTick;
     private Path configPath;
     private Path indexPath;
     private Path importRoot;
@@ -90,6 +92,8 @@ public final class MusicLibraryService {
     public void onServerStopping(MinecraftServer server) {
         playbackSessions.clear();
         jukeboxLooping.clear();
+        playerAutoDownloadIntervals.clear();
+        nextPlayerAutoDownloadTick.clear();
         saveConfig();
         saveIndex();
         this.server = null;
@@ -267,10 +271,25 @@ public final class MusicLibraryService {
 
     public String warmPlayerCache(ServerPlayer player) {
         ensureServer();
-        int sent = sendCacheWarmPayloads(player, listEntriesForPlayer(player));
+        int sent = sendCacheWarmPayloads(player, activeEntries());
         return sent == 0
                 ? "No active music entries are available to download."
                 : "Started caching " + sent + " song(s).";
+    }
+
+    public String setPlayerAutoDownload(ServerPlayer player, int intervalMinutes) {
+        ensureServer();
+        long intervalTicks = Math.max(1L, intervalMinutes) * 60L * 20L;
+        playerAutoDownloadIntervals.put(player.getUUID(), intervalTicks);
+        nextPlayerAutoDownloadTick.put(player.getUUID(), (long) server.getTickCount());
+        return "Automatic music downloads enabled every " + describeMinutes(intervalMinutes) + ".";
+    }
+
+    public String disablePlayerAutoDownload(ServerPlayer player) {
+        ensureServer();
+        playerAutoDownloadIntervals.remove(player.getUUID());
+        nextPlayerAutoDownloadTick.remove(player.getUUID());
+        return "Automatic music downloads disabled.";
     }
 
     public void openJukeboxSettings(ServerPlayer player, BlockPos pos) {
@@ -425,26 +444,20 @@ public final class MusicLibraryService {
     }
 
     private void warmCachesAutomatically(MinecraftServer server) {
-        if (!"auto".equalsIgnoreCase(config.cacheWarmMode)) {
-            return;
-        }
-
-        int intervalMinutes = Math.max(1, config.cacheWarmIntervalMinutes);
-        long intervalTicks = intervalMinutes * 60L * 20L;
-        if (nextAutomaticCacheWarmTick == 0L) {
-            nextAutomaticCacheWarmTick = server.getTickCount() + intervalTicks;
-            return;
-        }
-        if (server.getTickCount() < nextAutomaticCacheWarmTick) {
-            return;
-        }
-
-        nextAutomaticCacheWarmTick = server.getTickCount() + intervalTicks;
-        List<MusicEntry> activeEntries = entries.values().stream()
-                .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
-                .toList();
+        List<MusicEntry> activeEntries = activeEntries();
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            Long intervalTicks = playerAutoDownloadIntervals.get(player.getUUID());
+            if (intervalTicks == null) {
+                continue;
+            }
+
+            long nextTick = nextPlayerAutoDownloadTick.getOrDefault(player.getUUID(), 0L);
+            if (server.getTickCount() < nextTick) {
+                continue;
+            }
+
             sendCacheWarmPayloads(player, activeEntries);
+            nextPlayerAutoDownloadTick.put(player.getUUID(), server.getTickCount() + intervalTicks);
         }
     }
 
@@ -453,6 +466,7 @@ public final class MusicLibraryService {
             return 0;
         }
 
+        sendCachePrunePayload(player, candidates);
         int sent = 0;
         for (MusicEntry entry : candidates) {
             if (!MusicStatus.ACTIVE.equals(entry.status)) {
@@ -466,6 +480,46 @@ public final class MusicLibraryService {
             }
         }
         return sent;
+    }
+
+    private void sendCachePrunePayload(ServerPlayer player, List<MusicEntry> candidates) {
+        if (!ServerPlayNetworking.canSend(player, AudioCachePrunePayload.TYPE)) {
+            return;
+        }
+        String validCacheKeys = candidates.stream()
+                .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
+                .map(this::cacheKey)
+                .filter(key -> !key.isBlank())
+                .reduce((left, right) -> left + "\n" + right)
+                .orElse("");
+        ServerPlayNetworking.send(player, new AudioCachePrunePayload(validCacheKeys));
+    }
+
+    private List<MusicEntry> activeEntries() {
+        return entries.values().stream()
+                .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
+                .toList();
+    }
+
+    private String cacheKey(MusicEntry entry) {
+        if (entry.musicId == null || entry.musicId.isBlank()) {
+            return "";
+        }
+        try {
+            AudioCacheWarmPayload payload = cacheWarmPayload(entry);
+            return (payload.musicId() + "-" + payload.sha256()).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+        } catch (IllegalArgumentException exception) {
+            return "";
+        }
+    }
+
+    private String describeMinutes(int minutes) {
+        return switch (minutes) {
+            case 30 -> "30 minutes";
+            case 60 -> "1 hour";
+            case 90 -> "1 hour 30 minutes";
+            default -> minutes + " minutes";
+        };
     }
 
     public void stopJukeboxPlayback(Level level, BlockPos pos) {

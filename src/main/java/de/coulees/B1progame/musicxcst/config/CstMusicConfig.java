@@ -21,8 +21,6 @@ public final class CstMusicConfig {
     public int fadeInMilliseconds = 250;
     public int fadeOutMilliseconds = 500;
     public long clientCacheSizeBytes = 1024L * 1024L * 1024L;
-    public String cacheWarmMode = "auto";
-    public int cacheWarmIntervalMinutes = 30;
     public String absoluteImportSubfolder = "imported";
     public boolean allowSingleplayerAbsolutePaths = true;
     public boolean allowAdminAbsoluteServerPaths = false;

@@ -53,8 +53,18 @@ public final class CstMusicCommands {
                                 .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
                 .then(Commands.literal("storage")
                         .executes(ctx -> storage(ctx.getSource())))
-                .then(Commands.literal("downloadall")
-                        .executes(ctx -> downloadAll(ctx.getSource())))
+                .then(Commands.literal("download")
+                        .then(Commands.literal("all")
+                                .executes(ctx -> downloadAll(ctx.getSource())))
+                        .then(Commands.literal("auto")
+                                .then(Commands.literal("30m")
+                                        .executes(ctx -> downloadAuto(ctx.getSource(), 30)))
+                                .then(Commands.literal("1h")
+                                        .executes(ctx -> downloadAuto(ctx.getSource(), 60)))
+                                .then(Commands.literal("1h30m")
+                                        .executes(ctx -> downloadAuto(ctx.getSource(), 90))))
+                        .then(Commands.literal("off")
+                                .executes(ctx -> downloadOff(ctx.getSource()))))
                 .then(Commands.literal("admin")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.literal("storage").executes(ctx -> adminStorage(ctx.getSource())))
@@ -86,7 +96,9 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("/cstmusic info <musicId>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic delete <musicId>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic storage"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic downloadall"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic download all"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic download auto <30m|1h|1h30m>"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic download off"), false);
         if (isAdmin(source)) {
             source.sendSuccess(() -> Component.literal("/cstmusic admin storage"), false);
             source.sendSuccess(() -> Component.literal("/cstmusic admin list [page]"), false);
@@ -190,6 +202,20 @@ public final class CstMusicCommands {
     private static int downloadAll(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.warmPlayerCache(player);
+        source.sendSuccess(() -> Component.literal(result), false);
+        return 1;
+    }
+
+    private static int downloadAuto(CommandSourceStack source, int intervalMinutes) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        String result = Musicxcst.LIBRARY.setPlayerAutoDownload(player, intervalMinutes);
+        source.sendSuccess(() -> Component.literal(result), false);
+        return 1;
+    }
+
+    private static int downloadOff(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        String result = Musicxcst.LIBRARY.disablePlayerAutoDownload(player);
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }

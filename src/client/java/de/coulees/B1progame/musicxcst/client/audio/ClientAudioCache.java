@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.Set;
 
 public final class ClientAudioCache {
     private static final Path CACHE_ROOT = Minecraft.getInstance().gameDirectory.toPath().resolve("musicxcst-cache").normalize();
@@ -64,6 +65,25 @@ public final class ClientAudioCache {
         }
     }
 
+    public static void pruneExcept(Set<String> validCacheKeys) {
+        if (validCacheKeys == null) {
+            return;
+        }
+        try {
+            if (!Files.isDirectory(CACHE_ROOT)) {
+                return;
+            }
+            try (var paths = Files.list(CACHE_ROOT)) {
+                paths.filter(Files::isRegularFile)
+                        .filter(path -> path.getFileName().toString().endsWith(".ogg"))
+                        .filter(path -> !validCacheKeys.contains(stripExtension(path.getFileName().toString())))
+                        .forEach(ClientAudioCache::deleteQuietly);
+            }
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.debug("Failed to prune audio cache: {}", exception.getMessage());
+        }
+    }
+
     private static long size(Path path) {
         try {
             return Files.size(path);
@@ -88,5 +108,17 @@ public final class ClientAudioCache {
 
     private static String safeName(String value) {
         return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "_");
+    }
+
+    private static String stripExtension(String fileName) {
+        return fileName.endsWith(".ogg") ? fileName.substring(0, fileName.length() - 4) : fileName;
+    }
+
+    private static void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.debug("Failed to delete stale audio cache file '{}': {}", path.getFileName(), exception.getMessage());
+        }
     }
 }
