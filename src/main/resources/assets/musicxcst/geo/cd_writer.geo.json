@@ -1,0 +1,65 @@
+{
+  "format_version": "1.12.0",
+  "minecraft:geometry": [
+    {
+      "description": {
+        "identifier": "geometry.cd_writer",
+        "texture_width": 64,
+        "texture_height": 64,
+        "visible_bounds_width": 2,
+        "visible_bounds_height": 2,
+        "visible_bounds_offset": [0, 0.5, 0]
+      },
+      "bones": [
+        { "name": "writer", "pivot": [0, 0, 0] },
+        {
+          "name": "base",
+          "parent": "writer",
+          "pivot": [0, 0, 0],
+          "cubes": [
+            { "origin": [-8, 0, -8], "size": [16, 10, 16], "uv": [16, 0] },
+            { "origin": [-0.25, 9.5, -0.25], "size": [0.5, 2, 0.5], "uv": [32, 33] }
+          ]
+        },
+        {
+          "name": "CD",
+          "parent": "writer",
+          "pivot": [0, 10.75, 0],
+          "cubes": [
+            { "origin": [-3, 10.25, 4], "size": [6, 1, 1], "uv": [10, 32] },
+            { "origin": [-4, 10.25, -4], "size": [8, 1, 1], "uv": [32, 8] },
+            { "origin": [-3, 10.25, -5], "size": [6, 1, 1], "uv": [32, 19] },
+            { "origin": [-4, 10.25, 3], "size": [8, 1, 1], "uv": [32, 12] },
+            { "origin": [-5, 10.25, -3], "size": [10, 1, 6], "uv": [32, 6] }
+          ]
+        },
+        {
+          "name": "Stand",
+          "parent": "writer",
+          "pivot": [0, 0, 0],
+          "cubes": [
+            { "origin": [-5.5, 9, 4.5], "size": [1, 2, 1], "uv": [12, 34] }
+          ]
+        },
+        {
+          "name": "stand-head",
+          "parent": "Stand",
+          "pivot": [-5, 11.5, 5],
+          "cubes": [
+            { "origin": [-5.31883, 11, 4.49724], "size": [5, 1, 1], "uv": [32, 29] }
+          ]
+        },
+        {
+          "name": "Buttons",
+          "parent": "writer",
+          "pivot": [0, 0, 0],
+          "cubes": [
+            { "origin": [-1.5, 9.5, -7], "size": [3, 1, 1.5], "uv": [10, 33] },
+            { "origin": [-5.75, 9.75, -7], "size": [0.5, 1, 2], "uv": [14, 37] },
+            { "origin": [-4.75, 9.75, -7], "size": [0.5, 1, 2], "uv": [37, 25] }
+          ]
+        }
+      ]
+    }
+  ]
+}

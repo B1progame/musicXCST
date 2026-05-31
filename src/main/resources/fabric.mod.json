@@ -32,6 +32,7 @@
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
+    "geckolib": ">=5.5.1",
     "minecraft": "${minecraft_version}"
   }
 }

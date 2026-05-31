@@ -9,6 +9,7 @@ import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
@@ -35,20 +36,24 @@ public final class ClientMusicUploader {
     }
 
     private static int upload(FabricClientCommandSource source, String name, String pathText) {
+        return startUpload(source.getClient(), name, pathText);
+    }
+
+    public static int startUpload(Minecraft client, String name, String pathText) {
         Path path = Path.of(stripWrappingQuotes(pathText.trim())).normalize();
         if (!Files.isRegularFile(path)) {
-            source.sendFeedback(Component.literal("Music file was not found on this computer."));
+            sendClientMessage(client, Component.literal("Music file was not found on this computer."));
             return 0;
         }
 
-        Thread uploadThread = new Thread(() -> uploadFile(source, name, path), "musicxcst-client-upload");
+        Thread uploadThread = new Thread(() -> uploadFile(client, name, path), "musicxcst-client-upload");
         uploadThread.setDaemon(true);
         uploadThread.start();
-        source.sendFeedback(Component.literal("Started music upload. Keep the server connection open."));
+        sendClientMessage(client, Component.literal("Started music upload. Keep the server connection open."));
         return 1;
     }
 
-    private static void uploadFile(FabricClientCommandSource source, String name, Path path) {
+    private static void uploadFile(Minecraft client, String name, Path path) {
         String uploadId = UUID.randomUUID().toString().replace("-", "");
         try {
             long sizeBytes = Files.size(path);
@@ -62,17 +67,17 @@ public final class ClientMusicUploader {
                     byte[] data = read == buffer.length ? buffer.clone() : java.util.Arrays.copyOf(buffer, read);
                     offset += read;
                     ClientPlayNetworking.send(new ClientMusicUploadChunkPayload(uploadId, offset - read, data, offset >= sizeBytes));
-                    showProgress(source, offset, sizeBytes, started);
+                    showProgress(client, offset, sizeBytes, started);
                     Thread.sleep(250L);
                 }
             }
-            source.sendFeedback(Component.literal("Music upload finished. The server is processing it."));
+            sendClientMessage(client, Component.literal("Music upload finished. The server is processing it."));
         } catch (IOException exception) {
             Musicxcst.LOGGER.warn("Failed to upload music file '{}': {}", path.getFileName(), exception.getMessage());
-            source.sendError(Component.literal("Failed to read music file: " + exception.getMessage()));
+            sendClientMessage(client, Component.literal("Failed to read music file: " + exception.getMessage()));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            source.sendError(Component.literal("Music upload was interrupted."));
+            sendClientMessage(client, Component.literal("Music upload was interrupted."));
         }
     }
 
@@ -83,13 +88,21 @@ public final class ClientMusicUploader {
         return input;
     }
 
-    private static void showProgress(FabricClientCommandSource source, long uploadedBytes, long sizeBytes, long startedAtMillis) {
+    private static void showProgress(Minecraft client, long uploadedBytes, long sizeBytes, long startedAtMillis) {
         double percent = sizeBytes <= 0L ? 100.0D : (uploadedBytes * 100.0D / sizeBytes);
         long elapsedMillis = Math.max(1L, System.currentTimeMillis() - startedAtMillis);
         double bytesPerMillis = uploadedBytes / (double) elapsedMillis;
         long remainingMillis = bytesPerMillis <= 0.0D ? 0L : (long) ((sizeBytes - uploadedBytes) / bytesPerMillis);
         String message = "Upload " + String.format(java.util.Locale.ROOT, "%.1f", percent) + "%, ETA " + formatEta(remainingMillis);
-        source.getClient().execute(() -> source.getClient().gui.setOverlayMessage(Component.literal(message), false));
+        client.execute(() -> client.gui.setOverlayMessage(Component.literal(message), false));
+    }
+
+    private static void sendClientMessage(Minecraft client, Component message) {
+        client.execute(() -> {
+            if (client.player != null) {
+                client.player.sendSystemMessage(message);
+            }
+        });
     }
 
     private static String formatEta(long millis) {

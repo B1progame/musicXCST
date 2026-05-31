@@ -15,12 +15,12 @@ public final class JukeboxSettingsScreen extends Screen {
     private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/gui/jukebox_gui.png");
     private static final int TEXTURE_SIZE = 256;
     private static final int GUI_U = 0;
-    private static final int GUI_V = 127;
-    private static final int GUI_WIDTH = 176;
-    private static final int GUI_HEIGHT = 95;
-    private static final int BUTTON_Y = 67;
-    private static final int BUTTON_WIDTH = 40;
-    private static final int BUTTON_HEIGHT = 12;
+    private static final int GUI_V = 0;
+    private static final int GUI_WIDTH = 220;
+    private static final int GUI_HEIGHT = 119;
+    private static final int BUTTON_Y = 84;
+    private static final int BUTTON_WIDTH = 50;
+    private static final int BUTTON_HEIGHT = 15;
 
     private final BlockPos pos;
     private boolean looping;
@@ -37,10 +37,10 @@ public final class JukeboxSettingsScreen extends Screen {
         int left = this.width / 2 - GUI_WIDTH / 2;
         int top = this.height / 2 - GUI_HEIGHT / 2;
         this.loopButton = addRenderableWidget(Button.builder(loopLabel(), button -> toggleLooping())
-                .bounds(left + 7, top + BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(left + 9, top + BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         Button planned = addRenderableWidget(Button.builder(Component.literal("Planned"), button -> {
-        }).bounds(left + 129, top + BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
+        }).bounds(left + 161, top + BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
         planned.active = false;
     }
 

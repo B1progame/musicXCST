@@ -10,6 +10,8 @@ import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.data.MusicEntry;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
+import de.coulees.B1progame.musicxcst.network.ClientMusicUploadRequestPayload;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -50,8 +52,16 @@ public final class CstMusicCommands {
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "name"),
                                                         StringArgumentType.getString(ctx, "hexColor"),
-                                                        StringArgumentType.getString(ctx, "uploadedFile")
+                                                StringArgumentType.getString(ctx, "uploadedFile")
                                                 ))))))
+                .then(Commands.literal("upload")
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .then(Commands.argument("path", StringArgumentType.greedyString())
+                                        .executes(ctx -> uploadFromClientPath(
+                                                ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "name"),
+                                                StringArgumentType.getString(ctx, "path")
+                                        )))))
                 .then(Commands.literal("list")
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
@@ -140,6 +150,17 @@ public final class CstMusicCommands {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.createDiscFromUploadedFile(player, name, hexColor, uploadedFile);
         source.sendSuccess(() -> Component.literal(result), false);
+        return 1;
+    }
+
+    private static int uploadFromClientPath(CommandSourceStack source, String name, String path) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        if (!ServerPlayNetworking.canSend(player, ClientMusicUploadRequestPayload.TYPE)) {
+            throw new IllegalArgumentException("This client cannot upload music files. Restart the client with the latest musicXCST jar.");
+        }
+
+        ServerPlayNetworking.send(player, new ClientMusicUploadRequestPayload(name, path));
+        source.sendSuccess(() -> Component.literal("Starting client upload for '" + name + "'."), false);
         return 1;
     }
 
