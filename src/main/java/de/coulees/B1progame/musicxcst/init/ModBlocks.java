@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst.init;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.block.CdWriterBlock;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -11,7 +12,7 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
 
 public final class ModBlocks {
     public static final ResourceKey<Block> CD_WRITER_KEY = key("cd_writer");
-    public static final Block CD_WRITER = register(CD_WRITER_KEY, new Block(BlockBehaviour.Properties.of()
+    public static final Block CD_WRITER = register(CD_WRITER_KEY, new CdWriterBlock(BlockBehaviour.Properties.of()
             .setId(CD_WRITER_KEY)
             .strength(3.5F)
             .requiresCorrectToolForDrops()));
