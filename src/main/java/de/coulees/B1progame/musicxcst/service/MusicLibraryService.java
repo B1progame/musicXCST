@@ -169,6 +169,7 @@ public final class MusicLibraryService {
         entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
+        entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
         entry.status = MusicStatus.ACTIVE;
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
@@ -350,7 +351,8 @@ public final class MusicLibraryService {
                         serverLevel.dimension(),
                         pos.immutable(),
                         config.playbackRadiusBlocks,
-                        startedAtMillis
+                        startedAtMillis,
+                        Math.max(1L, entry.durationMillis)
                 ));
             }
             JukeboxStartPayload payload = startPayload(entry, pos, true, startedAtMillis);
@@ -579,11 +581,30 @@ public final class MusicLibraryService {
         }
     }
 
+    private void stopFinishedJukeboxPlayback(PlaybackSessionManager.PlaybackSession session) {
+        ServerLevel level = server.getLevel(session.dimension());
+        if (level == null) {
+            playbackSessions.stop(session.sourcePos());
+            return;
+        }
+
+        if (level.getBlockEntity(session.sourcePos()) instanceof JukeboxBlockEntity jukebox) {
+            jukebox.popOutTheItem();
+        } else {
+            stopJukeboxPlayback(level, session.sourcePos());
+        }
+    }
+
     private void syncJukeboxPlaybackSessions() {
         for (PlaybackSessionManager.PlaybackSession session : playbackSessions.sessions().values()) {
             MusicEntry entry = entries.get(session.musicId());
             if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
                 playbackSessions.stop(session.sourcePos());
+                continue;
+            }
+            if (!isJukeboxLooping(session.sourcePos()) && session.durationMillis() > 0L
+                    && System.currentTimeMillis() - session.startedAtMillis() >= session.durationMillis()) {
+                stopFinishedJukeboxPlayback(session);
                 continue;
             }
 
@@ -632,7 +653,10 @@ public final class MusicLibraryService {
         if (entry == null || !MusicStatus.ACTIVE.equals(entry.status)) {
             throw new IllegalArgumentException("Music entry is not active.");
         }
+        return resolvePlayableOggWithoutStatus(entry);
+    }
 
+    private Path resolvePlayableOggWithoutStatus(MusicEntry entry) {
         Path file;
         Path root;
         if (entry.normalizedRelativePath != null && !entry.normalizedRelativePath.isBlank()) {
@@ -856,6 +880,9 @@ public final class MusicLibraryService {
                 } else {
                     entry.fileSizeBytes = safeFileSize(file);
                 }
+                if (entry.durationMillis <= 0L && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".ogg")) {
+                    entry.durationMillis = probeAudioDurationMillis(file);
+                }
             } else {
                 entry.status = MusicStatus.MISSING;
             }
@@ -1043,6 +1070,41 @@ public final class MusicLibraryService {
     private int estimatedConversionSeconds(long sourceSizeBytes) {
         long megabytes = Math.max(1L, (sourceSizeBytes + 1024L * 1024L - 1L) / (1024L * 1024L));
         return (int) Math.max(5L, Math.min(120L, 6L + megabytes * 2L));
+    }
+
+    private long probeAudioDurationMillis(Path file) {
+        String ffmpeg = resolveFfmpegExecutable();
+        try {
+            Process process = new ProcessBuilder(ffmpeg, "-hide_banner", "-i", file.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            process.waitFor();
+            return parseDurationMillis(output);
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.warn("Failed to probe audio duration for '{}': {}", file.getFileName(), exception.getMessage());
+            return 0L;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return 0L;
+        }
+    }
+
+    private long parseDurationMillis(String ffmpegOutput) {
+        if (ffmpegOutput == null) {
+            return 0L;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)")
+                .matcher(ffmpegOutput);
+        if (!matcher.find()) {
+            return 0L;
+        }
+
+        long hours = Long.parseLong(matcher.group(1));
+        long minutes = Long.parseLong(matcher.group(2));
+        double seconds = Double.parseDouble(matcher.group(3));
+        return (long) (((hours * 60L + minutes) * 60L + seconds) * 1000.0D);
     }
 
     private String resolveFfmpegExecutable() {

@@ -54,6 +54,6 @@ public final class PlaybackSessionManager {
         listeners.clear();
     }
 
-    public record PlaybackSession(String musicId, ResourceKey<Level> dimension, BlockPos sourcePos, int radiusBlocks, long startedAtMillis) {
+    public record PlaybackSession(String musicId, ResourceKey<Level> dimension, BlockPos sourcePos, int radiusBlocks, long startedAtMillis, long durationMillis) {
     }
 }
