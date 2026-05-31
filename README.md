@@ -35,6 +35,7 @@ Player commands:
 
 - `/cstmusic help`
 - `/cstmusic create <name> <hexColor> <location>`
+- `/cstmusic_upload <name> <hexColor> <localFilePath>`
 - `/cstmusic list`
 - `/cstmusic info <musicId>`
 - `/cstmusic delete <musicId>`
@@ -71,6 +72,14 @@ In singleplayer, quoted Windows paths are supported when `allowSingleplayerAbsol
 ```
 
 Dedicated servers cannot read a friend's private computer path from chat. The file must exist on the server import folder, or a later CD Writer upload flow must send it to the server.
+
+Clients with the mod can upload a local file to the server while holding a blank Blueprint CD:
+
+```text
+/cstmusic_upload "Song Name" #00AAFF "C:\Users\Name\Music\song.mp3"
+```
+
+The server stores the upload under its world import folder, validates it with the same limits as server-side imports, normalizes it, and writes the selected Blueprint CD. Admins can tune upload pressure with `clientUploadBytesPerSecond` in `config/musicxcst.json`.
 
 ## Audio Engine
 

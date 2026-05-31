@@ -14,6 +14,7 @@ public final class CstMusicConfig {
     public String audioBitrate = "128k";
     public int sampleRate = 44100;
     public int previewCacheSeconds = 7;
+    public int clientUploadBytesPerSecond = 256 * 1024;
     public boolean stereoEnabled = true;
     public boolean monoDownmix = false;
     public String ffmpegPath = "ffmpeg";

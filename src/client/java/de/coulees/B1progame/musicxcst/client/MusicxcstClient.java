@@ -18,6 +18,7 @@ public class MusicxcstClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        ClientMusicUploader.register();
         ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleStart(payload)));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxSettingsOpenPayload.TYPE, (payload, context) -> context.client().execute(() -> context.client().setScreen(new JukeboxSettingsScreen(payload.pos(), payload.looping()))));
         ClientPlayNetworking.registerGlobalReceiver(AudioCachePrunePayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleCachePrune(payload)));

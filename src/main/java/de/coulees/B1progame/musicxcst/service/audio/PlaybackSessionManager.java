@@ -49,6 +49,13 @@ public final class PlaybackSessionManager {
         return removed;
     }
 
+    public void unmarkListeningEverywhere(UUID playerId) {
+        listeners.values().removeIf(current -> {
+            current.remove(playerId);
+            return current.isEmpty();
+        });
+    }
+
     public void clear() {
         sessions.clear();
         listeners.clear();

@@ -14,6 +14,8 @@ import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
+import de.coulees.B1progame.musicxcst.network.ClientMusicUploadChunkPayload;
+import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
@@ -72,6 +74,7 @@ public final class MusicLibraryService {
     private final Map<BlockPos, Boolean> jukeboxLooping = new LinkedHashMap<>();
     private final Map<UUID, Long> playerAutoDownloadIntervals = new LinkedHashMap<>();
     private final Map<UUID, Long> nextPlayerAutoDownloadTick = new LinkedHashMap<>();
+    private final Map<String, PendingClientUpload> pendingClientUploads = new LinkedHashMap<>();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
     private Path configPath;
@@ -94,9 +97,16 @@ public final class MusicLibraryService {
         jukeboxLooping.clear();
         playerAutoDownloadIntervals.clear();
         nextPlayerAutoDownloadTick.clear();
+        pendingClientUploads.clear();
         saveConfig();
         saveIndex();
         this.server = null;
+    }
+
+    public void onPlayerDisconnected(ServerPlayer player) {
+        playbackSessions.unmarkListeningEverywhere(player.getUUID());
+        nextPlayerAutoDownloadTick.remove(player.getUUID());
+        pendingClientUploads.values().removeIf(upload -> upload.ownerUuid().equals(player.getUUID()));
     }
 
     public void onServerTick(MinecraftServer server) {
@@ -198,6 +208,83 @@ public final class MusicLibraryService {
         syncPlayerInventory(player);
         warmPreviewCacheForAllPlayers(entry);
         return "Created Blueprint CD '" + sanitizedName + "' with music ID " + entry.musicId + ".";
+    }
+
+    private void createDiscFromUploadedFile(ServerPlayer player, PendingClientUpload upload) {
+        String normalizedColor = upload.hexColor();
+        if (normalizedColor == null) {
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Invalid hex color. Use RRGGBB or #RRGGBB.");
+        }
+
+        ItemStack selected = player.getInventory().getSelectedItem();
+        if (selected.getItem() != ModItems.BLUEPRINT_CD) {
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Hold a Blueprint CD in your selected slot first.");
+        }
+
+        String musicId = UUID.randomUUID().toString().replace("-", "");
+        Path ownerFolder = importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
+        Path stored = ownerFolder.resolve(musicId + "-" + upload.originalFileName()).normalize();
+        if (!stored.startsWith(importRoot)) {
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Upload destination escapes the import root.");
+        }
+
+        try {
+            Files.move(upload.tempPath(), stored, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException exception) {
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Failed to store uploaded music file.", exception);
+        }
+
+        long fileSize = safeFileSize(stored);
+        validateFile(stored, fileSize);
+        validateQuota(player.getUUID(), fileSize);
+        NormalizedAudio normalizedAudio = normalizeAudio(player, stored, musicId, fileSize);
+
+        MusicEntry entry = new MusicEntry();
+        entry.musicId = musicId;
+        entry.displayName = upload.displayName();
+        entry.originalFileName = upload.originalFileName();
+        entry.safeRelativePath = importRoot.relativize(stored).toString().replace('\\', '/');
+        entry.ownerUuid = player.getUUID().toString();
+        entry.ownerName = player.getName().getString();
+        entry.createdAtEpochMillis = Instant.now().toEpochMilli();
+        entry.fileSizeBytes = fileSize;
+        entry.sha256 = sha256(stored);
+        entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
+        entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
+        entry.normalizedSha256 = normalizedAudio.sha256();
+        entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
+        entry.status = MusicStatus.ACTIVE;
+        NormalizedAudio previewAudio = createPreviewAudio(player, entry);
+        entry.previewRelativePath = previewAudio.safeRelativePath();
+        entry.previewSizeBytes = previewAudio.sizeBytes();
+        entry.previewSha256 = previewAudio.sha256();
+        entry.normalizedFormat = config.normalizedOutputFormat;
+        entry.normalizedSampleRate = config.sampleRate;
+        entry.normalizedBitrate = config.audioBitrate;
+        entry.hexColor = normalizedColor;
+        entry.schemaVersion = Musicxcst.DISC_SCHEMA_VERSION;
+        entries.put(entry.musicId, entry);
+        saveIndex();
+
+        DiscData data = DiscData.fromEntry(entry);
+        if (selected.getCount() == 1) {
+            DiscData.writeToStack(selected, data);
+        } else {
+            selected.shrink(1);
+            ItemStack written = new ItemStack(ModItems.BLUEPRINT_CD);
+            DiscData.writeToStack(written, data);
+            if (!player.getInventory().add(written)) {
+                player.drop(written, false);
+            }
+        }
+
+        syncPlayerInventory(player);
+        warmPreviewCacheForAllPlayers(entry);
+        player.sendSystemMessage(Component.literal("Created Blueprint CD '" + upload.displayName() + "' from uploaded file."));
     }
 
     public List<MusicEntry> listEntriesForPlayer(ServerPlayer player) {
@@ -319,6 +406,84 @@ public final class MusicLibraryService {
         if (player.level().getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
             startJukeboxPlayback(player.level(), pos, jukebox.getTheItem());
         }
+    }
+
+    public void startClientUpload(ServerPlayer player, ClientMusicUploadStartPayload payload) {
+        ensureServer();
+        if (payload.sizeBytes() <= 0L || payload.sizeBytes() > config.maxFileSizeBytes) {
+            throw new IllegalArgumentException("Upload file size is not allowed.");
+        }
+        String uploadId = sanitizeUploadId(payload.uploadId());
+        String fileName = sanitizeFileName(payload.fileName());
+        String extension = extension(fileName);
+        if (!config.allowedFileExtensions.contains(extension)) {
+            throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
+        }
+
+        Path folder = importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
+        Path temp = folder.resolve(uploadId + "-" + fileName + ".upload").normalize();
+        if (!temp.startsWith(importRoot)) {
+            throw new IllegalArgumentException("Upload path escapes the import root.");
+        }
+
+        try {
+            Files.createDirectories(folder);
+            Files.deleteIfExists(temp);
+            pendingClientUploads.put(uploadId, new PendingClientUpload(
+                    uploadId,
+                    player.getUUID(),
+                    sanitizeSongName(payload.displayName()),
+                    normalizeHexColor(payload.hexColor()),
+                    fileName,
+                    temp,
+                    payload.sizeBytes(),
+                    0L,
+                    System.currentTimeMillis()
+            ));
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to prepare music upload.", exception);
+        }
+    }
+
+    public void receiveClientUploadChunk(ServerPlayer player, ClientMusicUploadChunkPayload payload) {
+        ensureServer();
+        String uploadId = sanitizeUploadId(payload.uploadId());
+        PendingClientUpload upload = pendingClientUploads.get(uploadId);
+        if (upload == null || !upload.ownerUuid().equals(player.getUUID())) {
+            return;
+        }
+        if (payload.offset() != upload.receivedBytes() || payload.data().length == 0) {
+            pendingClientUploads.remove(uploadId);
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Music upload chunk order is invalid.");
+        }
+        if (payload.data().length > Math.max(16 * 1024, config.clientUploadBytesPerSecond)) {
+            pendingClientUploads.remove(uploadId);
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Music upload chunk exceeds the configured upload rate.");
+        }
+
+        try {
+            Files.write(upload.tempPath(), payload.data(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException exception) {
+            pendingClientUploads.remove(uploadId);
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Failed to write music upload chunk.", exception);
+        }
+
+        long received = upload.receivedBytes() + payload.data().length;
+        PendingClientUpload updated = upload.withReceivedBytes(received);
+        if (!payload.last()) {
+            pendingClientUploads.put(uploadId, updated);
+            return;
+        }
+
+        pendingClientUploads.remove(uploadId);
+        if (received != upload.sizeBytes()) {
+            deleteQuietly(upload.tempPath());
+            throw new IllegalArgumentException("Music upload size does not match metadata.");
+        }
+        createDiscFromUploadedFile(player, updated);
     }
 
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
@@ -1190,6 +1355,22 @@ public final class MusicLibraryService {
         return input;
     }
 
+    private String sanitizeUploadId(String uploadId) {
+        String sanitized = uploadId == null ? "" : uploadId.replaceAll("[^a-zA-Z0-9_-]+", "");
+        if (sanitized.isBlank() || sanitized.length() > 64) {
+            throw new IllegalArgumentException("Invalid upload id.");
+        }
+        return sanitized;
+    }
+
+    private void deleteQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.debug("Failed to delete file '{}': {}", path.getFileName(), exception.getMessage());
+        }
+    }
+
     private ImportedMusicFile importAbsolutePath(CommandSourceStack source, ServerPlayer player, Path requestedPath, String musicId) {
         boolean allowedSingleplayer = server.isSingleplayer() && config.allowSingleplayerAbsolutePaths;
         boolean allowedAdminServerPath = server.isDedicatedServer() && config.allowAdminAbsoluteServerPaths && isAdmin(source);
@@ -1337,5 +1518,11 @@ public final class MusicLibraryService {
     }
 
     private record NormalizedAudio(String safeRelativePath, long sizeBytes, String sha256) {
+    }
+
+    private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String hexColor, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
+        private PendingClientUpload withReceivedBytes(long receivedBytes) {
+            return new PendingClientUpload(uploadId, ownerUuid, displayName, hexColor, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
+        }
     }
 }
