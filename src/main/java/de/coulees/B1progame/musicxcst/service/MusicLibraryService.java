@@ -29,9 +29,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -993,6 +993,10 @@ public final class MusicLibraryService {
                     }
                 }
             }
+            if (this.config.previewCacheSeconds == 7) {
+                this.config.previewCacheSeconds = 15;
+                saveConfig();
+            }
             this.importRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverImportFolder).normalize();
             this.normalizedRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverNormalizedAudioFolder).normalize();
             Files.createDirectories(importRoot);
@@ -1557,7 +1561,7 @@ public final class MusicLibraryService {
 
     private boolean isAdmin(CommandSourceStack source) {
         return source.permissions() instanceof LevelBasedPermissionSet levelBased
-                && levelBased.level().isEqualOrHigherThan(PermissionLevel.ADMINS);
+                && levelBased.level().isEqualOrHigherThan(PermissionLevel.GAMEMASTERS);
     }
 
     private record ImportedMusicFile(Path path, String originalFileName, String safeRelativePath) {

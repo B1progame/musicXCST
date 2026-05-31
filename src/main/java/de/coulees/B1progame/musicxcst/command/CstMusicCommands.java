@@ -16,7 +16,10 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -45,14 +48,15 @@ public final class CstMusicCommands {
                                         )))))
                 .then(Commands.literal("createupload")
                         .then(Commands.argument("name", StringArgumentType.string())
-                                .then(Commands.argument("hexColor", StringArgumentType.word())
-                                        .then(Commands.argument("uploadedFile", StringArgumentType.greedyString())
+                                .then(Commands.argument("hexColor", StringArgumentType.string())
+                                        .suggests(CstMusicCommands::suggestHexColors)
+                                        .then(Commands.argument("uploadedFile", StringArgumentType.string())
                                                 .suggests(CstMusicCommands::suggestUploadedFiles)
                                                 .executes(ctx -> createFromUpload(
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "name"),
                                                         StringArgumentType.getString(ctx, "hexColor"),
-                                                StringArgumentType.getString(ctx, "uploadedFile")
+                                                        StringArgumentType.getString(ctx, "uploadedFile")
                                                 ))))))
                 .then(Commands.literal("upload")
                         .then(Commands.argument("name", StringArgumentType.string())
@@ -110,28 +114,42 @@ public final class CstMusicCommands {
     }
 
     private static int help(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal("musicXCST commands:"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic help"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic upload <name> <localFilePath>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic create <name> <hexColor> <location>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic createupload <name> <hexColor> <uploadedFile>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic list"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic info <musicId>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic delete <musicId>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic storage"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic download all"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic download auto <30m|1h|1h30m>"), false);
-        source.sendSuccess(() -> Component.literal("/cstmusic download off"), false);
+        source.sendSuccess(() -> Component.literal("musicXCST guide").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), false);
+        source.sendSuccess(() -> Component.literal("1. Upload a local audio file from your PC:").withStyle(ChatFormatting.GRAY), false);
+        sendCommandHelp(source, "/cstmusic upload \"Song Name\" \"C:\\Music\\song.mp3\"", "Click to prepare a client upload command. Keep the server connection open until it finishes.");
+        source.sendSuccess(() -> Component.literal("2. Hold a blank Blueprint CD, then write uploaded audio to it:").withStyle(ChatFormatting.GRAY), false);
+        sendCommandHelp(source, "/cstmusic createupload \"Disc Name\" #00AAFF \"song.mp3\"", "Click to prepare a createupload command. The last argument is one of your uploaded files.");
+        source.sendSuccess(() -> Component.literal("Server-side import alternative:").withStyle(ChatFormatting.GRAY), false);
+        sendCommandHelp(source, "/cstmusic create \"Disc Name\" #00AAFF \"music-import/song.mp3\"", "Use this when the file already exists in the server music-import folder.");
+        source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
+        sendCommandHelp(source, "/cstmusic list", "Show your registered music IDs.");
+        sendCommandHelp(source, "/cstmusic info <musicId>", "Show status, owner, file size, checksum, and color.");
+        sendCommandHelp(source, "/cstmusic delete <musicId>", "Delete one of your music entries.");
+        sendCommandHelp(source, "/cstmusic storage", "Show your storage usage and server storage if you are admin.");
+        source.sendSuccess(() -> Component.literal("Avoid playback gaps by pre-downloading full audio:").withStyle(ChatFormatting.GRAY), false);
+        sendCommandHelp(source, "/cstmusic download all", "Download all active Blueprint CD audio to your local cache now.");
+        sendCommandHelp(source, "/cstmusic download auto 30m", "Automatically refresh your local cache every 30 minutes.");
+        sendCommandHelp(source, "/cstmusic download off", "Disable automatic cache refresh.");
+        source.sendSuccess(() -> Component.literal("Tips: quote names and paths with spaces; colors accept #RRGGBB or RRGGBB; previews play while full audio downloads.").withStyle(ChatFormatting.YELLOW), false);
         if (isAdmin(source)) {
-            source.sendSuccess(() -> Component.literal("/cstmusic admin storage"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin list [page]"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin info <musicId>"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin delete <musicId>"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin play <musicId>"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin reload"), false);
-            source.sendSuccess(() -> Component.literal("/cstmusic admin repairindex"), false);
+            source.sendSuccess(() -> Component.literal("Admin tools:").withStyle(ChatFormatting.RED), false);
+            sendCommandHelp(source, "/cstmusic admin storage", "Show detailed server storage usage.");
+            sendCommandHelp(source, "/cstmusic admin list 1", "List all music entries by page.");
+            sendCommandHelp(source, "/cstmusic admin info <musicId>", "Inspect any music entry.");
+            sendCommandHelp(source, "/cstmusic admin delete <musicId>", "Delete any music entry.");
+            sendCommandHelp(source, "/cstmusic admin play <musicId>", "Play any active entry for yourself.");
+            sendCommandHelp(source, "/cstmusic admin reload", "Reload config and music index.");
+            sendCommandHelp(source, "/cstmusic admin repairindex", "Repair the music index from stored files.");
         }
         return 1;
+    }
+
+    private static void sendCommandHelp(CommandSourceStack source, String command, String tip) {
+        source.sendSuccess(() -> Component.literal("  ")
+                .append(Component.literal(command).withStyle(style -> style
+                        .withColor(ChatFormatting.AQUA)
+                        .withClickEvent(new ClickEvent.SuggestCommand(command))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(tip))))), false);
     }
 
     private static int create(CommandSourceStack source, String name, String colorAndLocation) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -310,7 +328,7 @@ public final class CstMusicCommands {
 
     private static boolean isAdmin(CommandSourceStack source) {
         return source.permissions() instanceof LevelBasedPermissionSet levelBased
-                && levelBased.level().isEqualOrHigherThan(PermissionLevel.ADMINS);
+                && levelBased.level().isEqualOrHigherThan(PermissionLevel.GAMEMASTERS);
     }
 
     private static CompletableFuture<Suggestions> suggestOwnMusicIds(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
@@ -343,6 +361,10 @@ public final class CstMusicCommands {
         } catch (com.mojang.brigadier.exceptions.CommandSyntaxException exception) {
             return Suggestions.empty();
         }
+    }
+
+    private static CompletableFuture<Suggestions> suggestHexColors(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(List.of("#C93A3A", "#00AAFF", "C93A3A"), builder);
     }
 
     private record CreateArguments(String hexColor, String location) {

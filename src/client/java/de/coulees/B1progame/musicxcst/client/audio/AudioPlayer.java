@@ -14,11 +14,19 @@ public final class AudioPlayer {
     }
 
     public static PlayingSound play(JukeboxStartPayload payload, Path file) throws IOException {
+        return play(payload, file, payload.looping());
+    }
+
+    public static PlayingSound playPreview(JukeboxStartPayload payload, Path file) throws IOException {
+        return play(payload, file, true);
+    }
+
+    private static PlayingSound play(JukeboxStartPayload payload, Path file, boolean looping) throws IOException {
         AudioDecoder.DecodedAudio decoded = AudioDecoder.decodeOgg(file);
         int format = decoded.channels() == 1 ? AL10.AL_FORMAT_MONO16 : AL10.AL_FORMAT_STEREO16;
         float durationSeconds = decoded.pcm().remaining() / (float) decoded.channels() / decoded.sampleRate();
         float elapsedSeconds = PlaybackSyncManager.elapsedMillis(payload) / 1000.0F;
-        if (elapsedSeconds >= durationSeconds) {
+        if (!looping && elapsedSeconds >= durationSeconds) {
             LibCStdlib.free(decoded.pcm());
             return null;
         }
@@ -31,7 +39,7 @@ public final class AudioPlayer {
         AL10.alSourcei(source, AL10.AL_BUFFER, buffer);
         AL10.alSourcef(source, AL10.AL_GAIN, 1.0F);
         AL10.alSourcef(source, AL10.AL_PITCH, 1.0F);
-        AL10.alSourcei(source, AL10.AL_LOOPING, payload.looping() ? AL10.AL_TRUE : AL10.AL_FALSE);
+        AL10.alSourcei(source, AL10.AL_LOOPING, looping ? AL10.AL_TRUE : AL10.AL_FALSE);
 
         if (payload.positional()) {
             BlockPos pos = payload.pos();
@@ -45,9 +53,10 @@ public final class AudioPlayer {
             AL10.alSource3f(source, AL10.AL_POSITION, 0.0F, 0.0F, 0.0F);
         }
 
-        AL10.alSourcef(source, AL11.AL_SEC_OFFSET, elapsedSeconds);
+        float offsetSeconds = looping && durationSeconds > 0.0F ? elapsedSeconds % durationSeconds : elapsedSeconds;
+        AL10.alSourcef(source, AL11.AL_SEC_OFFSET, offsetSeconds);
         AL10.alSourcePlay(source);
-        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional(), payload.looping());
+        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional(), looping);
     }
 
     public record PlayingSound(int source, int buffer, String musicId, long startedAtMillis, BlockPos pos, int radiusBlocks, boolean positional, boolean looping) implements AutoCloseable {

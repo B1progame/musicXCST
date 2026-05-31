@@ -7,9 +7,9 @@ import de.coulees.B1progame.musicxcst.block.entity.CdWriterBlockEntity;
 import net.minecraft.resources.Identifier;
 
 public final class CdWriterGeoModel extends GeoModel<CdWriterBlockEntity> {
-    private static final Identifier MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "geo/cd_writer.geo.json");
+    private static final Identifier MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "block/cd_writer");
     private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/block/cd_writer.png");
-    private static final Identifier ANIMATION = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "animations/cd_writer.animation.json");
+    private static final Identifier ANIMATION = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "block/cd_writer");
 
     @Override
     public Identifier getModelResource(GeoRenderState renderState) {

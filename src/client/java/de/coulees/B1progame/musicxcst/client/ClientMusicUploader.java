@@ -1,13 +1,8 @@
 package de.coulees.B1progame.musicxcst.client;
 
-import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
-import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -24,19 +19,6 @@ public final class ClientMusicUploader {
     }
 
     public static void register() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("cstmusic")
-                .then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("upload")
-                        .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("name", StringArgumentType.string())
-                                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("path", StringArgumentType.greedyString())
-                                        .executes(context -> upload(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, "name"),
-                                                StringArgumentType.getString(context, "path")
-                                        )))))));
-    }
-
-    private static int upload(FabricClientCommandSource source, String name, String pathText) {
-        return startUpload(source.getClient(), name, pathText);
     }
 
     public static int startUpload(Minecraft client, String name, String pathText) {

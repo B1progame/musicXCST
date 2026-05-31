@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 public final class CdWriterBlockEntity extends BlockEntity implements GeoBlockEntity {
-    private static final RawAnimation IDLE = RawAnimation.begin().thenLoop("animation");
+    private static final RawAnimation IDLE = RawAnimation.begin().thenLoop("cd_writer_anim");
     private final AnimatableInstanceCache cache = new SingletonAnimatableInstanceCache(this);
 
     public CdWriterBlockEntity(BlockPos pos, BlockState state) {

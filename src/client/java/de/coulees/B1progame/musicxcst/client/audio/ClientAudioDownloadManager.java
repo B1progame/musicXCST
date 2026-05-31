@@ -39,7 +39,7 @@ public final class ClientAudioDownloadManager {
                 && !payload.previewSha256().isBlank()
                 && payload.previewSizeBytes() > 0L
                 && ClientAudioCache.hasPreviewComplete(payload.musicId(), payload.previewSha256(), payload.previewSizeBytes())) {
-            CustomAudioEngine.play(payload, ClientAudioCache.previewCompletePath(payload.musicId(), payload.previewSha256()));
+            CustomAudioEngine.playPreview(payload, ClientAudioCache.previewCompletePath(payload.musicId(), payload.previewSha256()));
         }
 
         ClientAudioCache.deleteTemp(payload.musicId(), payload.sha256());

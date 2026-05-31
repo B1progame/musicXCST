@@ -21,6 +21,14 @@ public final class CustomAudioEngine {
     }
 
     public static void play(JukeboxStartPayload payload, Path audioFile) {
+        play(payload, audioFile, false);
+    }
+
+    public static void playPreview(JukeboxStartPayload payload, Path audioFile) {
+        play(payload, audioFile, true);
+    }
+
+    private static void play(JukeboxStartPayload payload, Path audioFile, boolean preview) {
         AudioPlayer.PlayingSound current = PLAYING.get(payload.pos());
         if (current != null && current.matches(payload) && current.active()) {
             return;
@@ -28,7 +36,9 @@ public final class CustomAudioEngine {
 
         stop(new JukeboxStopPayload(payload.pos()));
         try {
-            AudioPlayer.PlayingSound sound = AudioPlayer.play(payload, audioFile);
+            AudioPlayer.PlayingSound sound = preview
+                    ? AudioPlayer.playPreview(payload, audioFile)
+                    : AudioPlayer.play(payload, audioFile);
             if (sound != null) {
                 PLAYING.put(payload.pos().immutable(), sound);
             }

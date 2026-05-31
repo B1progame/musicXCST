@@ -8,14 +8,13 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 public final class ModBlocks {
     public static final ResourceKey<Block> CD_WRITER_KEY = key("cd_writer");
-    public static final Block CD_WRITER = register(CD_WRITER_KEY, new CdWriterBlock(BlockBehaviour.Properties.of()
-            .setId(CD_WRITER_KEY)
-            .strength(3.5F)
-            .requiresCorrectToolForDrops()));
+    public static final Block CD_WRITER = register(CD_WRITER_KEY, new CdWriterBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.JUKEBOX)
+            .setId(CD_WRITER_KEY)));
 
     private ModBlocks() {
     }
