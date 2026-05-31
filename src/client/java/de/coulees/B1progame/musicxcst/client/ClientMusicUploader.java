@@ -23,34 +23,37 @@ public final class ClientMusicUploader {
     }
 
     public static void register() {
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("cstmusic_upload")
-                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("path", StringArgumentType.greedyString())
-                        .executes(context -> upload(
-                                context.getSource(),
-                                StringArgumentType.getString(context, "path")
-                        )))));
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("cstmusic")
+                .then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("upload")
+                        .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("name", StringArgumentType.string())
+                                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("path", StringArgumentType.greedyString())
+                                        .executes(context -> upload(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "name"),
+                                                StringArgumentType.getString(context, "path")
+                                        )))))));
     }
 
-    private static int upload(FabricClientCommandSource source, String pathText) {
+    private static int upload(FabricClientCommandSource source, String name, String pathText) {
         Path path = Path.of(stripWrappingQuotes(pathText.trim())).normalize();
         if (!Files.isRegularFile(path)) {
             source.sendFeedback(Component.literal("Music file was not found on this computer."));
             return 0;
         }
 
-        Thread uploadThread = new Thread(() -> uploadFile(source, path), "musicxcst-client-upload");
+        Thread uploadThread = new Thread(() -> uploadFile(source, name, path), "musicxcst-client-upload");
         uploadThread.setDaemon(true);
         uploadThread.start();
         source.sendFeedback(Component.literal("Started music upload. Keep the server connection open."));
         return 1;
     }
 
-    private static void uploadFile(FabricClientCommandSource source, Path path) {
+    private static void uploadFile(FabricClientCommandSource source, String name, Path path) {
         String uploadId = UUID.randomUUID().toString().replace("-", "");
         try {
             long sizeBytes = Files.size(path);
             long started = System.currentTimeMillis();
-            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, path.getFileName().toString(), sizeBytes));
+            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, path.getFileName().toString(), sizeBytes));
             try (var input = Files.newInputStream(path)) {
                 byte[] buffer = new byte[CHUNK_BYTES];
                 long offset = 0L;

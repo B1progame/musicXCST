@@ -102,6 +102,7 @@ public final class CstMusicCommands {
     private static int help(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal("musicXCST commands:"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic help"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic upload <name> <localFilePath>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic create <name> <hexColor> <location>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic createupload <name> <hexColor> <uploadedFile>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic list"), false);

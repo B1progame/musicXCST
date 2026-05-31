@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst;
 
 import de.coulees.B1progame.musicxcst.command.CstMusicCommands;
+import de.coulees.B1progame.musicxcst.init.ModBlockEntities;
 import de.coulees.B1progame.musicxcst.init.ModBlocks;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.init.ModSounds;
@@ -52,6 +53,7 @@ public final class Musicxcst implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(ClientMusicUploadChunkPayload.TYPE, (payload, context) -> LIBRARY.receiveClientUploadChunk(context.player(), payload));
         ModSounds.register();
         ModBlocks.register();
+        ModBlockEntities.register();
         ModItems.register();
         CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
                 .register(entries -> {

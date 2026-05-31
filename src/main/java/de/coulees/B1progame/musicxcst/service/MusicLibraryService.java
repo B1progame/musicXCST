@@ -225,7 +225,7 @@ public final class MusicLibraryService {
 
         Path source = uploadedMusicPath(player, uploadedFileName);
         if (!Files.isRegularFile(source)) {
-            throw new IllegalArgumentException("Uploaded song not found. Upload it first with /cstmusic_upload <path>.");
+            throw new IllegalArgumentException("Uploaded song not found. Upload it first with /cstmusic upload <name> <path>.");
         }
 
         String musicId = UUID.randomUUID().toString().replace("-", "");
@@ -435,12 +435,14 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Upload file size is not allowed.");
         }
         String uploadId = sanitizeUploadId(payload.uploadId());
-        String fileName = sanitizeFileName(payload.fileName());
-        String extension = extension(fileName);
+        String sourceFileName = sanitizeFileName(payload.fileName());
+        String extension = extension(sourceFileName);
         if (!config.allowedFileExtensions.contains(extension)) {
             throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
         }
 
+        String uploadName = sanitizeSongName(payload.uploadName());
+        String fileName = sanitizeFileName(uploadName + "." + extension);
         Path folder = uploadFolder(player);
         Path temp = folder.resolve(fileName + ".upload").normalize();
         if (!temp.startsWith(importRoot)) {
@@ -453,6 +455,7 @@ public final class MusicLibraryService {
             pendingClientUploads.put(uploadId, new PendingClientUpload(
                     uploadId,
                     player.getUUID(),
+                    uploadName,
                     fileName,
                     temp,
                     payload.sizeBytes(),
@@ -509,7 +512,7 @@ public final class MusicLibraryService {
         }
         try {
             Files.move(updated.tempPath(), finalPath, StandardCopyOption.REPLACE_EXISTING);
-            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.originalFileName() + "'. Use /cstmusic createupload to write it to a disc."));
+            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.displayName() + "'. Use /cstmusic createupload to write it to a disc."));
         } catch (IOException exception) {
             deleteQuietly(updated.tempPath());
             throw new IllegalArgumentException("Failed to finish music upload.", exception);
@@ -1563,9 +1566,9 @@ public final class MusicLibraryService {
     private record NormalizedAudio(String safeRelativePath, long sizeBytes, String sha256) {
     }
 
-    private record PendingClientUpload(String uploadId, UUID ownerUuid, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
+    private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
         private PendingClientUpload withReceivedBytes(long receivedBytes) {
-            return new PendingClientUpload(uploadId, ownerUuid, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
+            return new PendingClientUpload(uploadId, ownerUuid, displayName, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
         }
     }
 }
