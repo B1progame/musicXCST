@@ -23,4 +23,15 @@ public abstract class JukeboxBlockMixin {
             cir.setReturnValue(InteractionResult.SUCCESS);
         }
     }
+
+    @Inject(method = "useWithoutItem", at = @At("HEAD"), cancellable = true)
+    private void musicxcst$openSettings(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit, CallbackInfoReturnable<InteractionResult> cir) {
+        if (!player.isShiftKeyDown()) {
+            return;
+        }
+        if (!level.isClientSide()) {
+            Musicxcst.LIBRARY.openJukeboxSettings((net.minecraft.server.level.ServerPlayer) player, pos);
+        }
+        cir.setReturnValue(InteractionResult.SUCCESS);
+    }
 }

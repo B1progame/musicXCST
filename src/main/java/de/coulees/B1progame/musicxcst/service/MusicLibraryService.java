@@ -13,6 +13,8 @@ import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
+import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
+import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
@@ -32,6 +34,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
@@ -65,6 +68,7 @@ public final class MusicLibraryService {
     private final Map<String, MusicEntry> entries = new LinkedHashMap<>();
     private final PlaybackSessionManager playbackSessions = new PlaybackSessionManager();
     private final PlaybackRangeTracker playbackRange = new PlaybackRangeTracker();
+    private final Map<BlockPos, Boolean> jukeboxLooping = new LinkedHashMap<>();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
     private long nextAutomaticCacheWarmTick;
@@ -85,6 +89,7 @@ public final class MusicLibraryService {
 
     public void onServerStopping(MinecraftServer server) {
         playbackSessions.clear();
+        jukeboxLooping.clear();
         saveConfig();
         saveIndex();
         this.server = null;
@@ -266,6 +271,29 @@ public final class MusicLibraryService {
         return sent == 0
                 ? "No active music entries are available to download."
                 : "Started caching " + sent + " song(s).";
+    }
+
+    public void openJukeboxSettings(ServerPlayer player, BlockPos pos) {
+        ensureServer();
+        if (!player.level().getBlockState(pos).is(Blocks.JUKEBOX) || player.blockPosition().distSqr(pos) > 64.0D) {
+            return;
+        }
+        if (ServerPlayNetworking.canSend(player, JukeboxSettingsOpenPayload.TYPE)) {
+            ServerPlayNetworking.send(player, new JukeboxSettingsOpenPayload(pos.immutable(), isJukeboxLooping(pos)));
+        }
+    }
+
+    public void updateJukeboxSettings(ServerPlayer player, JukeboxSettingsUpdatePayload payload) {
+        ensureServer();
+        BlockPos pos = payload.pos().immutable();
+        if (!player.level().getBlockState(pos).is(Blocks.JUKEBOX) || player.blockPosition().distSqr(pos) > 64.0D) {
+            return;
+        }
+
+        jukeboxLooping.put(pos, payload.looping());
+        if (player.level().getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
+            startJukeboxPlayback(player.level(), pos, jukebox.getTheItem());
+        }
     }
 
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
@@ -541,8 +569,13 @@ public final class MusicLibraryService {
                 safeFileSize(file),
                 startedAtMillis,
                 config.playbackRadiusBlocks,
-                positional
+                positional,
+                positional && isJukeboxLooping(pos)
         );
+    }
+
+    private boolean isJukeboxLooping(BlockPos pos) {
+        return Boolean.TRUE.equals(jukeboxLooping.get(pos));
     }
 
     private AudioCacheWarmPayload cacheWarmPayload(MusicEntry entry) {

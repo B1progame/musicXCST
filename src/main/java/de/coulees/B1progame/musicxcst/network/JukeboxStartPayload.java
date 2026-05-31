@@ -7,7 +7,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, String sha256, long sizeBytes, long startedAtMillis, int radiusBlocks, boolean positional) implements CustomPacketPayload {
+public record JukeboxStartPayload(BlockPos pos, String musicId, String displayName, String sha256, long sizeBytes, long startedAtMillis, int radiusBlocks, boolean positional, boolean looping) implements CustomPacketPayload {
     public static final Type<JukeboxStartPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "jukebox_start"));
     public static final StreamCodec<RegistryFriendlyByteBuf, JukeboxStartPayload> CODEC = StreamCodec.ofMember(JukeboxStartPayload::write, JukeboxStartPayload::read);
 
@@ -20,6 +20,7 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
                 buffer.readLong(),
                 buffer.readLong(),
                 buffer.readVarInt(),
+                buffer.readBoolean(),
                 buffer.readBoolean()
         );
     }
@@ -33,6 +34,7 @@ public record JukeboxStartPayload(BlockPos pos, String musicId, String displayNa
         buffer.writeLong(startedAtMillis);
         buffer.writeVarInt(radiusBlocks);
         buffer.writeBoolean(positional);
+        buffer.writeBoolean(looping);
     }
 
     @Override

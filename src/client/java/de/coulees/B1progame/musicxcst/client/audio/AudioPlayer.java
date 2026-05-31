@@ -31,6 +31,7 @@ public final class AudioPlayer {
         AL10.alSourcei(source, AL10.AL_BUFFER, buffer);
         AL10.alSourcef(source, AL10.AL_GAIN, 1.0F);
         AL10.alSourcef(source, AL10.AL_PITCH, 1.0F);
+        AL10.alSourcei(source, AL10.AL_LOOPING, payload.looping() ? AL10.AL_TRUE : AL10.AL_FALSE);
 
         if (payload.positional()) {
             BlockPos pos = payload.pos();
@@ -46,12 +47,12 @@ public final class AudioPlayer {
 
         AL10.alSourcef(source, AL11.AL_SEC_OFFSET, elapsedSeconds);
         AL10.alSourcePlay(source);
-        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional());
+        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional(), payload.looping());
     }
 
-    public record PlayingSound(int source, int buffer, String musicId, long startedAtMillis, BlockPos pos, int radiusBlocks, boolean positional) implements AutoCloseable {
+    public record PlayingSound(int source, int buffer, String musicId, long startedAtMillis, BlockPos pos, int radiusBlocks, boolean positional, boolean looping) implements AutoCloseable {
         public boolean matches(JukeboxStartPayload payload) {
-            return musicId.equals(payload.musicId()) && startedAtMillis == payload.startedAtMillis();
+            return musicId.equals(payload.musicId()) && startedAtMillis == payload.startedAtMillis() && looping == payload.looping();
         }
 
         public void setGain(float gain) {
