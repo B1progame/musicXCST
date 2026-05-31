@@ -1,5 +1,6 @@
 {
   "item.musicxcst.blueprint_cd": "Blueprint CD",
+  "block.musicxcst.cd_writer": "CD Writer",
   "jukebox_song.musicxcst.blueprint_cd_silence": "Blueprint CD",
   "itemGroup.musicxcst": "musicXCST"
 }

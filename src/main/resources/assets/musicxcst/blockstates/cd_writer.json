@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "musicxcst:block/cd_writer"
+    }
+  }
+}

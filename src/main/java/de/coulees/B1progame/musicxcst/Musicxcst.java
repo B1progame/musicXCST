@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst;
 
 import de.coulees.B1progame.musicxcst.command.CstMusicCommands;
+import de.coulees.B1progame.musicxcst.init.ModBlocks;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.init.ModSounds;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
@@ -36,9 +37,13 @@ public final class Musicxcst implements ModInitializer {
         PayloadTypeRegistry.serverboundPlay().register(AudioChunkRequestPayload.TYPE, AudioChunkRequestPayload.CODEC);
         ServerPlayNetworking.registerGlobalReceiver(AudioChunkRequestPayload.TYPE, (payload, context) -> LIBRARY.sendAudioChunk(context.player(), payload));
         ModSounds.register();
+        ModBlocks.register();
         ModItems.register();
         CreativeModeTabEvents.modifyOutputEvent(CreativeModeTabs.TOOLS_AND_UTILITIES)
-                .register(entries -> entries.accept(ModItems.BLUEPRINT_CD));
+                .register(entries -> {
+                    entries.accept(ModItems.BLUEPRINT_CD);
+                    entries.accept(ModItems.CD_WRITER);
+                });
         CommandRegistrationCallback.EVENT.register(CstMusicCommands::register);
         ServerLifecycleEvents.SERVER_STARTED.register(LIBRARY::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(LIBRARY::onServerStopping);

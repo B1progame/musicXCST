@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IDI",
+    "NNN"
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "D": "minecraft:diamond",
+    "N": "#minecraft:planks"
+  },
+  "result": {
+    "id": "musicxcst:cd_writer",
+    "count": 1
+  }
+}
