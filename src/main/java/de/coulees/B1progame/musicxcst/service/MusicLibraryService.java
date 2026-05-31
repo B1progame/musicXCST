@@ -210,31 +210,35 @@ public final class MusicLibraryService {
         return "Created Blueprint CD '" + sanitizedName + "' with music ID " + entry.musicId + ".";
     }
 
-    private void createDiscFromUploadedFile(ServerPlayer player, PendingClientUpload upload) {
-        String normalizedColor = upload.hexColor();
+    public String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName) {
+        ensureServer();
+        String displayName = sanitizeSongName(requestedName);
+        String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
-            deleteQuietly(upload.tempPath());
             throw new IllegalArgumentException("Invalid hex color. Use RRGGBB or #RRGGBB.");
         }
 
         ItemStack selected = player.getInventory().getSelectedItem();
         if (selected.getItem() != ModItems.BLUEPRINT_CD) {
-            deleteQuietly(upload.tempPath());
             throw new IllegalArgumentException("Hold a Blueprint CD in your selected slot first.");
         }
 
+        Path source = uploadedMusicPath(player, uploadedFileName);
+        if (!Files.isRegularFile(source)) {
+            throw new IllegalArgumentException("Uploaded song not found. Upload it first with /cstmusic_upload <path>.");
+        }
+
         String musicId = UUID.randomUUID().toString().replace("-", "");
-        Path ownerFolder = importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
-        Path stored = ownerFolder.resolve(musicId + "-" + upload.originalFileName()).normalize();
+        Path ownerFolder = uploadFolder(player).resolve("created").normalize();
+        Path stored = ownerFolder.resolve(musicId + "-" + source.getFileName().toString()).normalize();
         if (!stored.startsWith(importRoot)) {
-            deleteQuietly(upload.tempPath());
             throw new IllegalArgumentException("Upload destination escapes the import root.");
         }
 
         try {
-            Files.move(upload.tempPath(), stored, StandardCopyOption.REPLACE_EXISTING);
+            Files.createDirectories(ownerFolder);
+            Files.copy(source, stored, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException exception) {
-            deleteQuietly(upload.tempPath());
             throw new IllegalArgumentException("Failed to store uploaded music file.", exception);
         }
 
@@ -245,8 +249,8 @@ public final class MusicLibraryService {
 
         MusicEntry entry = new MusicEntry();
         entry.musicId = musicId;
-        entry.displayName = upload.displayName();
-        entry.originalFileName = upload.originalFileName();
+        entry.displayName = displayName;
+        entry.originalFileName = source.getFileName().toString();
         entry.safeRelativePath = importRoot.relativize(stored).toString().replace('\\', '/');
         entry.ownerUuid = player.getUUID().toString();
         entry.ownerName = player.getName().getString();
@@ -284,7 +288,7 @@ public final class MusicLibraryService {
 
         syncPlayerInventory(player);
         warmPreviewCacheForAllPlayers(entry);
-        player.sendSystemMessage(Component.literal("Created Blueprint CD '" + upload.displayName() + "' from uploaded file."));
+        return "Created Blueprint CD '" + displayName + "' from uploaded file " + source.getFileName() + ".";
     }
 
     public List<MusicEntry> listEntriesForPlayer(ServerPlayer player) {
@@ -298,6 +302,23 @@ public final class MusicLibraryService {
         return entries.values().stream()
                 .sorted(Comparator.comparingLong(entry -> -entry.createdAtEpochMillis))
                 .toList();
+    }
+
+    public List<String> listUploadedFilesForPlayer(ServerPlayer player) {
+        Path folder = uploadFolder(player);
+        if (!Files.isDirectory(folder)) {
+            return List.of();
+        }
+        try (var paths = Files.list(folder)) {
+            return paths.filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .filter(fileName -> !fileName.endsWith(".upload"))
+                    .sorted()
+                    .toList();
+        } catch (IOException exception) {
+            Musicxcst.LOGGER.debug("Failed to list uploaded music files for {}: {}", player.getName().getString(), exception.getMessage());
+            return List.of();
+        }
     }
 
     public MusicEntry requirePlayerVisibleEntry(ServerPlayer player, String musicId) {
@@ -420,8 +441,8 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
         }
 
-        Path folder = importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
-        Path temp = folder.resolve(uploadId + "-" + fileName + ".upload").normalize();
+        Path folder = uploadFolder(player);
+        Path temp = folder.resolve(fileName + ".upload").normalize();
         if (!temp.startsWith(importRoot)) {
             throw new IllegalArgumentException("Upload path escapes the import root.");
         }
@@ -432,8 +453,6 @@ public final class MusicLibraryService {
             pendingClientUploads.put(uploadId, new PendingClientUpload(
                     uploadId,
                     player.getUUID(),
-                    sanitizeSongName(payload.displayName()),
-                    normalizeHexColor(payload.hexColor()),
                     fileName,
                     temp,
                     payload.sizeBytes(),
@@ -483,7 +502,18 @@ public final class MusicLibraryService {
             deleteQuietly(upload.tempPath());
             throw new IllegalArgumentException("Music upload size does not match metadata.");
         }
-        createDiscFromUploadedFile(player, updated);
+        Path finalPath = uploadFolder(player).resolve(updated.originalFileName()).normalize();
+        if (!finalPath.startsWith(importRoot)) {
+            deleteQuietly(updated.tempPath());
+            throw new IllegalArgumentException("Upload destination escapes the import root.");
+        }
+        try {
+            Files.move(updated.tempPath(), finalPath, StandardCopyOption.REPLACE_EXISTING);
+            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.originalFileName() + "'. Use /cstmusic createupload to write it to a disc."));
+        } catch (IOException exception) {
+            deleteQuietly(updated.tempPath());
+            throw new IllegalArgumentException("Failed to finish music upload.", exception);
+        }
     }
 
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
@@ -1363,6 +1393,19 @@ public final class MusicLibraryService {
         return sanitized;
     }
 
+    private Path uploadFolder(ServerPlayer player) {
+        return importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
+    }
+
+    private Path uploadedMusicPath(ServerPlayer player, String uploadedFileName) {
+        String safeFileName = sanitizeFileName(stripWrappingQuotes(uploadedFileName.trim()));
+        Path path = uploadFolder(player).resolve(safeFileName).normalize();
+        if (!path.startsWith(importRoot)) {
+            throw new IllegalArgumentException("Uploaded file path escapes the import root.");
+        }
+        return path;
+    }
+
     private void deleteQuietly(Path path) {
         try {
             Files.deleteIfExists(path);
@@ -1520,9 +1563,9 @@ public final class MusicLibraryService {
     private record NormalizedAudio(String safeRelativePath, long sizeBytes, String sha256) {
     }
 
-    private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String hexColor, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
+    private record PendingClientUpload(String uploadId, UUID ownerUuid, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
         private PendingClientUpload withReceivedBytes(long receivedBytes) {
-            return new PendingClientUpload(uploadId, ownerUuid, displayName, hexColor, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
+            return new PendingClientUpload(uploadId, ownerUuid, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
         }
     }
 }

@@ -35,7 +35,8 @@ Player commands:
 
 - `/cstmusic help`
 - `/cstmusic create <name> <hexColor> <location>`
-- `/cstmusic_upload <name> <hexColor> <localFilePath>`
+- `/cstmusic_upload <localFilePath>`
+- `/cstmusic createupload <name> <hexColor> <uploadedFile>`
 - `/cstmusic list`
 - `/cstmusic info <musicId>`
 - `/cstmusic delete <musicId>`
@@ -71,15 +72,21 @@ In singleplayer, quoted Windows paths are supported when `allowSingleplayerAbsol
 /cstmusic create "Song Name" #4d1111 "C:\Users\Name\Music\song.mp3"
 ```
 
-Dedicated servers cannot read a friend's private computer path from chat. The file must exist on the server import folder, or a later CD Writer upload flow must send it to the server.
+Dedicated servers cannot read a friend's private computer path from chat. The file must exist on the server import folder, or the client upload flow must send it to the server.
 
-Clients with the mod can upload a local file to the server while holding a blank Blueprint CD:
+Clients with the mod can upload a local file to the server by giving only the path:
 
 ```text
-/cstmusic_upload "Song Name" #00AAFF "C:\Users\Name\Music\song.mp3"
+/cstmusic_upload "C:\Users\Name\Music\song.mp3"
 ```
 
-The server stores the upload under its world import folder, validates it with the same limits as server-side imports, normalizes it, and writes the selected Blueprint CD. Admins can tune upload pressure with `clientUploadBytesPerSecond` in `config/musicxcst.json`.
+The uploader shows an actionbar percentage and ETA while sending. Uploaded files are private to the player who uploaded them. To write one of your uploaded files to a blank Blueprint CD, hold the blank disc and run:
+
+```text
+/cstmusic createupload "Song Name" #00AAFF song.mp3
+```
+
+The uploaded file argument suggests only your own uploaded files. The server validates it with the same limits as server-side imports, normalizes it, and writes the selected Blueprint CD. Admins can tune upload pressure with `clientUploadBytesPerSecond` in `config/musicxcst.json`.
 
 ## Audio Engine
 

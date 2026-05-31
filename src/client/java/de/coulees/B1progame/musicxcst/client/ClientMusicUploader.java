@@ -24,36 +24,33 @@ public final class ClientMusicUploader {
 
     public static void register() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(LiteralArgumentBuilder.<FabricClientCommandSource>literal("cstmusic_upload")
-                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("name", StringArgumentType.string())
-                        .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("hexColor", StringArgumentType.word())
-                                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("path", StringArgumentType.greedyString())
-                                        .executes(context -> upload(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, "name"),
-                                                StringArgumentType.getString(context, "hexColor"),
-                                                StringArgumentType.getString(context, "path")
-                                        )))))));
+                .then(RequiredArgumentBuilder.<FabricClientCommandSource, String>argument("path", StringArgumentType.greedyString())
+                        .executes(context -> upload(
+                                context.getSource(),
+                                StringArgumentType.getString(context, "path")
+                        )))));
     }
 
-    private static int upload(FabricClientCommandSource source, String name, String hexColor, String pathText) {
+    private static int upload(FabricClientCommandSource source, String pathText) {
         Path path = Path.of(stripWrappingQuotes(pathText.trim())).normalize();
         if (!Files.isRegularFile(path)) {
             source.sendFeedback(Component.literal("Music file was not found on this computer."));
             return 0;
         }
 
-        Thread uploadThread = new Thread(() -> uploadFile(source, name, hexColor, path), "musicxcst-client-upload");
+        Thread uploadThread = new Thread(() -> uploadFile(source, path), "musicxcst-client-upload");
         uploadThread.setDaemon(true);
         uploadThread.start();
         source.sendFeedback(Component.literal("Started music upload. Keep the server connection open."));
         return 1;
     }
 
-    private static void uploadFile(FabricClientCommandSource source, String name, String hexColor, Path path) {
+    private static void uploadFile(FabricClientCommandSource source, Path path) {
         String uploadId = UUID.randomUUID().toString().replace("-", "");
         try {
             long sizeBytes = Files.size(path);
-            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, hexColor, path.getFileName().toString(), sizeBytes));
+            long started = System.currentTimeMillis();
+            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, path.getFileName().toString(), sizeBytes));
             try (var input = Files.newInputStream(path)) {
                 byte[] buffer = new byte[CHUNK_BYTES];
                 long offset = 0L;
@@ -62,6 +59,7 @@ public final class ClientMusicUploader {
                     byte[] data = read == buffer.length ? buffer.clone() : java.util.Arrays.copyOf(buffer, read);
                     offset += read;
                     ClientPlayNetworking.send(new ClientMusicUploadChunkPayload(uploadId, offset - read, data, offset >= sizeBytes));
+                    showProgress(source, offset, sizeBytes, started);
                     Thread.sleep(250L);
                 }
             }
@@ -80,5 +78,21 @@ public final class ClientMusicUploader {
             return input.substring(1, input.length() - 1);
         }
         return input;
+    }
+
+    private static void showProgress(FabricClientCommandSource source, long uploadedBytes, long sizeBytes, long startedAtMillis) {
+        double percent = sizeBytes <= 0L ? 100.0D : (uploadedBytes * 100.0D / sizeBytes);
+        long elapsedMillis = Math.max(1L, System.currentTimeMillis() - startedAtMillis);
+        double bytesPerMillis = uploadedBytes / (double) elapsedMillis;
+        long remainingMillis = bytesPerMillis <= 0.0D ? 0L : (long) ((sizeBytes - uploadedBytes) / bytesPerMillis);
+        String message = "Upload " + String.format(java.util.Locale.ROOT, "%.1f", percent) + "%, ETA " + formatEta(remainingMillis);
+        source.getClient().execute(() -> source.getClient().gui.setOverlayMessage(Component.literal(message), false));
+    }
+
+    private static String formatEta(long millis) {
+        long seconds = Math.max(0L, (millis + 999L) / 1000L);
+        long minutes = seconds / 60L;
+        long remainingSeconds = seconds % 60L;
+        return minutes > 0L ? minutes + "m " + remainingSeconds + "s" : remainingSeconds + "s";
     }
 }

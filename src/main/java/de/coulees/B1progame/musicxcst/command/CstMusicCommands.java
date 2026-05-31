@@ -41,6 +41,17 @@ public final class CstMusicCommands {
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "colorAndLocation")
                                         )))))
+                .then(Commands.literal("createupload")
+                        .then(Commands.argument("name", StringArgumentType.string())
+                                .then(Commands.argument("hexColor", StringArgumentType.word())
+                                        .then(Commands.argument("uploadedFile", StringArgumentType.greedyString())
+                                                .suggests(CstMusicCommands::suggestUploadedFiles)
+                                                .executes(ctx -> createFromUpload(
+                                                        ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "name"),
+                                                        StringArgumentType.getString(ctx, "hexColor"),
+                                                        StringArgumentType.getString(ctx, "uploadedFile")
+                                                ))))))
                 .then(Commands.literal("list")
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
@@ -92,6 +103,7 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("musicXCST commands:"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic help"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic create <name> <hexColor> <location>"), false);
+        source.sendSuccess(() -> Component.literal("/cstmusic createupload <name> <hexColor> <uploadedFile>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic list"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic info <musicId>"), false);
         source.sendSuccess(() -> Component.literal("/cstmusic delete <musicId>"), false);
@@ -115,6 +127,17 @@ public final class CstMusicCommands {
         ServerPlayer player = source.getPlayerOrException();
         CreateArguments arguments = parseCreateTail(colorAndLocation);
         String result = Musicxcst.LIBRARY.createDiscForPlayer(source, player, name, arguments.hexColor(), arguments.location());
+        source.sendSuccess(() -> Component.literal(result), false);
+        return 1;
+    }
+
+    private static int createFromUpload(CommandSourceStack source, String name, String hexColor, String uploadedFile) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (!isHexColor(hexColor)) {
+            throw new IllegalArgumentException("Invalid hex color. Use RRGGBB or #RRGGBB.");
+        }
+
+        ServerPlayer player = source.getPlayerOrException();
+        String result = Musicxcst.LIBRARY.createDiscFromUploadedFile(player, name, hexColor, uploadedFile);
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }
@@ -289,6 +312,15 @@ public final class CstMusicCommands {
                         .map(entry -> entry.musicId),
                 builder
         );
+    }
+
+    private static CompletableFuture<Suggestions> suggestUploadedFiles(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            return SharedSuggestionProvider.suggest(Musicxcst.LIBRARY.listUploadedFilesForPlayer(player), builder);
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException exception) {
+            return Suggestions.empty();
+        }
     }
 
     private record CreateArguments(String hexColor, String location) {
