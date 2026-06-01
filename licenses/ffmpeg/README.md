@@ -10,7 +10,9 @@ Recommended bundled binary:
 - Avoid GPL builds for the mod jar unless you intentionally want to handle GPL distribution obligations.
 - For current releases, FFmpeg 8.x is fine; MusicXCST only needs the `ffmpeg` executable with OGG Vorbis encode support.
 
-Current bundled binary sources:
+The `no-bundled-ffmpeg` branch does not include FFmpeg binaries.
+
+Recommended sources when binaries are added:
 
 - Windows x86_64: GyanD FFmpeg `8.1.1` essentials build, `bin/ffmpeg.exe`
 - Linux x86_64: BtbN FFmpeg Linux x86_64 LGPL build, `bin/ffmpeg`

@@ -9,6 +9,8 @@ This repository has two distribution branches:
 - `master`: includes bundled FFmpeg binaries for Windows x86_64 and Linux x86_64 through Git LFS.
 - `no-bundled-ffmpeg`: contains the same mod code without bundled FFmpeg binaries. Use this branch when a pack or server wants a smaller jar or wants clients to provide FFmpeg themselves.
 
+This branch is `no-bundled-ffmpeg`, so it does not include FFmpeg binaries in `src/main/resources/native/ffmpeg/`.
+
 ## CD Writer Workflow
 
 1. Place the CD Writer block.
@@ -34,7 +36,7 @@ The default flow is client-side transcoding:
 
 Server-side FFmpeg is only an optional fallback for admin/server-side imports. It is disabled by default with `allowServerSideTranscoding = false`.
 
-Bundled FFmpeg binaries are loaded from:
+If a distributor wants to add bundled FFmpeg binaries back to this branch, they should be placed at:
 
 ```text
 src/main/resources/native/ffmpeg/windows-x86_64/ffmpeg.exe
@@ -44,7 +46,7 @@ src/main/resources/native/ffmpeg/macos-x86_64/ffmpeg
 src/main/resources/native/ffmpeg/macos-aarch64/ffmpeg
 ```
 
-At runtime the selected binary is extracted to:
+At runtime a bundled binary would be extracted to:
 
 ```text
 config/musicxcst/native/ffmpeg/
@@ -57,6 +59,8 @@ Recommended FFmpeg builds:
 - Do not bundle builds made with `--enable-nonfree`.
 - Avoid GPL builds unless the distribution intentionally accepts GPL obligations.
 - The mod only needs the `ffmpeg` executable with OGG Vorbis encoding support.
+
+Because this branch does not bundle binaries, clients should use `ffmpegMode = system` or `ffmpegMode = path`, and each client needs FFmpeg available locally for CD Writer uploads.
 
 ## Config
 
