@@ -39,6 +39,7 @@ public final class CstMusicCommands {
                 .executes(ctx -> help(ctx.getSource()))
                 .then(Commands.literal("help").executes(ctx -> help(ctx.getSource())))
                 .then(Commands.literal("create")
+                        .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .then(Commands.argument("colorAndLocation", StringArgumentType.greedyString())
                                         .executes(ctx -> create(
@@ -47,6 +48,7 @@ public final class CstMusicCommands {
                                                 StringArgumentType.getString(ctx, "colorAndLocation")
                                         )))))
                 .then(Commands.literal("createupload")
+                        .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .then(Commands.argument("hexColor", StringArgumentType.string())
                                         .suggests(CstMusicCommands::suggestHexColors)
@@ -59,6 +61,7 @@ public final class CstMusicCommands {
                                                         StringArgumentType.getString(ctx, "uploadedFile")
                                                 ))))))
                 .then(Commands.literal("upload")
+                        .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .then(Commands.argument("path", StringArgumentType.greedyString())
                                         .executes(ctx -> uploadFromClientPath(
@@ -115,12 +118,11 @@ public final class CstMusicCommands {
 
     private static int help(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal("musicXCST guide").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), false);
-        source.sendSuccess(() -> Component.literal("1. Upload a local audio file from your PC:").withStyle(ChatFormatting.GRAY), false);
-        sendCommandHelp(source, "/cstmusic upload \"Song Name\" \"C:\\Music\\song.mp3\"", "Click to prepare a client upload command. Keep the server connection open until it finishes.");
-        source.sendSuccess(() -> Component.literal("2. Hold a blank Blueprint CD, then write uploaded audio to it:").withStyle(ChatFormatting.GRAY), false);
-        sendCommandHelp(source, "/cstmusic createupload \"Disc Name\" #00AAFF \"song.mp3\"", "Click to prepare a createupload command. The last argument is one of your uploaded files.");
-        source.sendSuccess(() -> Component.literal("Server-side import alternative:").withStyle(ChatFormatting.GRAY), false);
-        sendCommandHelp(source, "/cstmusic create \"Disc Name\" #00AAFF \"music-import/song.mp3\"", "Use this when the file already exists in the server music-import folder.");
+        source.sendSuccess(() -> Component.literal("CD Writer block workflow:").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("  1. Place a blank Blueprint CD in the CD Writer input slot.").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("  2. Enter a disc name, choose a local file with the folder button, and edit the disc color/texture.").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("  3. Press Print and keep the GUI/server connection open until conversion finishes.").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("  Supported files: mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi.").withStyle(ChatFormatting.YELLOW), false);
         source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
         sendCommandHelp(source, "/cstmusic list", "Show your registered music IDs.");
         sendCommandHelp(source, "/cstmusic info <musicId>", "Show status, owner, file size, checksum, and color.");
@@ -130,8 +132,12 @@ public final class CstMusicCommands {
         sendCommandHelp(source, "/cstmusic download all", "Download all active Blueprint CD audio to your local cache now.");
         sendCommandHelp(source, "/cstmusic download auto 30m", "Automatically refresh your local cache every 30 minutes.");
         sendCommandHelp(source, "/cstmusic download off", "Disable automatic cache refresh.");
-        source.sendSuccess(() -> Component.literal("Tips: quote names and paths with spaces; colors accept #RRGGBB or RRGGBB; previews play while full audio downloads.").withStyle(ChatFormatting.YELLOW), false);
+        source.sendSuccess(() -> Component.literal("Tips: use Download All before long sessions; previews play while full audio downloads.").withStyle(ChatFormatting.YELLOW), false);
         if (isAdmin(source)) {
+            source.sendSuccess(() -> Component.literal("Admin creation commands:").withStyle(ChatFormatting.RED), false);
+            sendCommandHelp(source, "/cstmusic upload \"Song Name\" \"C:\\Music\\song.mp3\"", "Admin-only client upload command.");
+            sendCommandHelp(source, "/cstmusic createupload \"Disc Name\" #00AAFF \"song.mp3\"", "Admin-only command for writing an uploaded file to a held Blueprint CD.");
+            sendCommandHelp(source, "/cstmusic create \"Disc Name\" #00AAFF \"music-import/song.mp3\"", "Admin-only server-side import command.");
             source.sendSuccess(() -> Component.literal("Admin tools:").withStyle(ChatFormatting.RED), false);
             sendCommandHelp(source, "/cstmusic admin storage", "Show detailed server storage usage.");
             sendCommandHelp(source, "/cstmusic admin list 1", "List all music entries by page.");

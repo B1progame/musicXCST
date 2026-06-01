@@ -1,6 +1,51 @@
 # musicXCST
 
-`musicXCST` is a Fabric mod for Minecraft `26.1.2` that adds writable custom music CDs. The current version is command-based: players craft a blank `Blueprint CD`, import a server-safe music file with `/cstmusic`, and play the written disc through the mod's custom audio backend.
+`musicXCST` is a Fabric mod for Minecraft `26.1.2` that adds writable custom music CDs. Players craft a blank `Blueprint CD`, write audio with the CD Writer block, and play the written disc through the mod's custom audio backend.
+
+## FFmpeg
+
+MusicXCST prefers client-side FFmpeg transcoding for CD Writer uploads:
+
+1. The client selects a local audio file in the CD Writer GUI.
+2. The client converts it to normalized OGG Vorbis.
+3. The converted `.ogg` is uploaded to the server.
+4. The server validates and stores the converted audio.
+
+This avoids requiring normal Minecraft server hosters to install FFmpeg globally. Server-side transcoding is disabled by default and is intended only as an admin/server-side import fallback.
+
+Bundled FFmpeg binaries must be placed under:
+
+```text
+src/main/resources/native/ffmpeg/windows-x86_64/ffmpeg.exe
+src/main/resources/native/ffmpeg/linux-x86_64/ffmpeg
+src/main/resources/native/ffmpeg/linux-aarch64/ffmpeg
+src/main/resources/native/ffmpeg/macos-x86_64/ffmpeg
+src/main/resources/native/ffmpeg/macos-aarch64/ffmpeg
+```
+
+At runtime the matching binary is extracted to `config/musicxcst/native/ffmpeg/`.
+
+Recommended binary choice:
+
+- Use a stable FFmpeg release build. FFmpeg 8.x works for MusicXCST.
+- Prefer an LGPL build for redistribution.
+- Do not bundle a build made with `--enable-nonfree`.
+- Avoid GPL builds unless you intentionally want to handle GPL distribution obligations for the packaged binary.
+- MusicXCST only needs the `ffmpeg` executable with OGG Vorbis encoding support.
+
+If you do not bundle binaries, players can still use `ffmpegMode = system` or `ffmpegMode = path`, but then each client needs FFmpeg available locally for CD Writer uploads.
+
+Relevant config keys:
+
+- `ffmpegMode`: `bundled`, `system`, `path`, or `disabled`
+- `ffmpegPath`: explicit executable path when `ffmpegMode = path`
+- `audioBitrateKbps`: normalized output bitrate, usually `128` or `160`
+- `maxUploadMb`
+- `maxDurationSeconds`
+- `maxServerStorageMb`
+- `allowServerSideTranscoding`: `false` by default
+
+Users are responsible for uploading audio they have rights to use. Do not include copyrighted music files in mod jars or modpacks.
 
 ## Current Scope
 

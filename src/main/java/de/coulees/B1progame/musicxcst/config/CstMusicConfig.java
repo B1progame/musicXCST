@@ -7,10 +7,16 @@ public final class CstMusicConfig {
     public long maxFileSizeBytes = 25L * 1024L * 1024L;
     public long maxStoragePerPlayerBytes = 250L * 1024L * 1024L;
     public long maxTotalServerStorageBytes = 2L * 1024L * 1024L * 1024L;
-    public List<String> allowedFileExtensions = new ArrayList<>(List.of("mp3", "mp4", "wav", "ogg", "flac", "m4a", "aac", "webm"));
+    public List<String> allowedFileExtensions = new ArrayList<>(List.of("mp3", "mp4", "wav", "ogg", "flac", "m4a", "aac", "webm", "avi"));
     public String serverImportFolder = "music-import";
     public String serverNormalizedAudioFolder = "music-normalized";
     public String normalizedOutputFormat = "ogg";
+    public String ffmpegMode = "bundled";
+    public int audioBitrateKbps = 128;
+    public int maxUploadMb = 25;
+    public int maxDurationSeconds = 0;
+    public int maxServerStorageMb = 2048;
+    public boolean allowServerSideTranscoding = false;
     public String audioBitrate = "128k";
     public int sampleRate = 44100;
     public int previewCacheSeconds = 15;

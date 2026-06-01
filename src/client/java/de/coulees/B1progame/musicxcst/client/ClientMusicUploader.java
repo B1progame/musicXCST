@@ -1,6 +1,11 @@
 package de.coulees.B1progame.musicxcst.client;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
+import de.coulees.B1progame.musicxcst.media.AudioValidation;
+import de.coulees.B1progame.musicxcst.media.FfmpegLocator;
+import de.coulees.B1progame.musicxcst.media.MediaTranscoder;
+import de.coulees.B1progame.musicxcst.media.TranscodeResult;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -16,6 +21,9 @@ import java.util.function.Consumer;
 
 public final class ClientMusicUploader {
     private static final int CHUNK_BYTES = 64 * 1024;
+    private static final AudioValidation AUDIO_VALIDATION = new AudioValidation();
+    private static final FfmpegLocator FFMPEG_LOCATOR = new FfmpegLocator();
+    private static final MediaTranscoder MEDIA_TRANSCODER = new MediaTranscoder();
 
     private ClientMusicUploader() {
     }
@@ -33,16 +41,51 @@ public final class ClientMusicUploader {
 
     public static int startUpload(Minecraft client, String name, String pathText, Consumer<String> afterUpload, Consumer<String> progress) {
         Path path = Path.of(stripWrappingQuotes(pathText.trim())).normalize();
-        if (!Files.isRegularFile(path)) {
-            sendClientMessage(client, Component.literal("Music file was not found on this computer."));
+        CstMusicConfig config = new CstMusicConfig();
+        try {
+            AUDIO_VALIDATION.validateClientInput(path, config);
+        } catch (IllegalArgumentException exception) {
+            sendClientMessage(client, Component.literal(exception.getMessage()));
             return 0;
         }
 
-        Thread uploadThread = new Thread(() -> uploadFile(client, name, path, afterUpload, progress), "musicxcst-client-upload");
+        Thread uploadThread = new Thread(() -> transcodeAndUploadFile(client, name, path, config, afterUpload, progress), "musicxcst-client-upload");
         uploadThread.setDaemon(true);
         uploadThread.start();
-        sendClientMessage(client, Component.literal("Started music upload. Keep the server connection open."));
+        sendClientMessage(client, Component.literal("Started music conversion/upload. Keep the server connection open."));
         return 1;
+    }
+
+    private static void transcodeAndUploadFile(Minecraft client, String name, Path path, CstMusicConfig config, Consumer<String> afterUpload, Consumer<String> progress) {
+        Path transcoded = null;
+        try {
+            String ffmpeg = FFMPEG_LOCATOR.require(client.gameDirectory.toPath(), config);
+            Path folder = client.gameDirectory.toPath().resolve("config").resolve(Musicxcst.MOD_ID).resolve("client-transcoded").normalize();
+            transcoded = folder.resolve(UUID.randomUUID().toString().replace("-", "") + ".ogg").normalize();
+            if (progress != null) {
+                client.execute(() -> progress.accept("Converting audio..."));
+            }
+            TranscodeResult result = MEDIA_TRANSCODER.transcodeToOgg(ffmpeg, path, transcoded, config, message -> client.execute(() -> {
+                client.gui.setOverlayMessage(Component.literal(message), false);
+                if (progress != null) {
+                    progress.accept(message);
+                }
+            }));
+            uploadFile(client, name, result.output(), afterUpload, progress);
+        } catch (IllegalArgumentException exception) {
+            Musicxcst.LOGGER.warn("Failed to transcode music file '{}': {}", path.getFileName(), exception.getMessage());
+            sendClientMessage(client, Component.literal("Failed to convert audio: " + exception.getMessage()));
+            if (progress != null) {
+                client.execute(() -> progress.accept(""));
+            }
+        } finally {
+            if (transcoded != null) {
+                try {
+                    Files.deleteIfExists(transcoded);
+                } catch (IOException ignored) {
+                }
+            }
+        }
     }
 
     private static void uploadFile(Minecraft client, String name, Path path, Consumer<String> afterUpload, Consumer<String> progress) {
@@ -68,7 +111,7 @@ public final class ClientMusicUploader {
                 client.execute(() -> progress.accept("Processing on server..."));
             }
             if (afterUpload != null) {
-                String uploadedFileName = uploadedFileName(name, path);
+                String uploadedFileName = uploadedFileName(name, Path.of(sanitizeSongName(name) + ".ogg"));
                 client.execute(() -> afterUpload.accept(uploadedFileName));
             }
         } catch (IOException exception) {

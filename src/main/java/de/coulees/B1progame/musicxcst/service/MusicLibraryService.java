@@ -12,6 +12,8 @@ import de.coulees.B1progame.musicxcst.data.StorageStats;
 import de.coulees.B1progame.musicxcst.block.entity.CdWriterBlockEntity;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.menu.CdWriterMenu;
+import de.coulees.B1progame.musicxcst.media.FfmpegLocator;
+import de.coulees.B1progame.musicxcst.media.MediaTranscoder;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
@@ -25,7 +27,6 @@ import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
-import de.coulees.B1progame.musicxcst.service.audio.BundledFfmpegResolver;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackRangeTracker;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackSessionManager;
 import net.minecraft.commands.CommandSourceStack;
@@ -82,6 +83,8 @@ public final class MusicLibraryService {
     private final Map<UUID, Long> playerAutoDownloadIntervals = new LinkedHashMap<>();
     private final Map<UUID, Long> nextPlayerAutoDownloadTick = new LinkedHashMap<>();
     private final Map<String, PendingClientUpload> pendingClientUploads = new LinkedHashMap<>();
+    private final FfmpegLocator ffmpegLocator = new FfmpegLocator();
+    private final MediaTranscoder mediaTranscoder = new MediaTranscoder();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
     private Path configPath;
@@ -431,7 +434,7 @@ public final class MusicLibraryService {
 
     public void openCdWriter(ServerPlayer player, BlockPos pos) {
         ensureServer();
-        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
+        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity blockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
             return;
         }
         player.openMenu(new ExtendedMenuProvider<BlockPos>() {
@@ -447,7 +450,7 @@ public final class MusicLibraryService {
 
             @Override
             public CdWriterMenu createMenu(int containerId, Inventory inventory, Player menuPlayer) {
-                return new CdWriterMenu(containerId, inventory, ContainerLevelAccess.create(menuPlayer.level(), pos), pos);
+                return new CdWriterMenu(containerId, inventory, blockEntity, ContainerLevelAccess.create(menuPlayer.level(), pos), pos);
             }
         });
     }
@@ -455,7 +458,7 @@ public final class MusicLibraryService {
     public void writeCdFromUploadedFile(ServerPlayer player, CdWriterWritePayload payload) {
         ensureServer();
         BlockPos pos = payload.pos().immutable();
-        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
+        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity blockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
             player.sendSystemMessage(Component.literal("CD Writer is no longer available."));
             finishCdWriterClient(player, pos);
             return;
@@ -469,6 +472,7 @@ public final class MusicLibraryService {
                 player.sendSystemMessage(Component.literal("Take the finished CD out of the CD Writer first."));
                 return;
             }
+            blockEntity.setConverting(true);
             menu.setConverting(true);
             String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), menu.inputStack(), menu::inputChanged);
             menu.moveInputToOutput();
@@ -476,6 +480,7 @@ public final class MusicLibraryService {
         } catch (IllegalArgumentException exception) {
             player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
         } finally {
+            blockEntity.setConverting(false);
             if (player.containerMenu instanceof CdWriterMenu menu && menu.pos().equals(pos)) {
                 menu.setConverting(false);
             }
@@ -510,8 +515,8 @@ public final class MusicLibraryService {
         String uploadId = sanitizeUploadId(payload.uploadId());
         String sourceFileName = sanitizeFileName(payload.fileName());
         String extension = extension(sourceFileName);
-        if (!config.allowedFileExtensions.contains(extension)) {
-            throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
+        if (!"ogg".equals(extension)) {
+            throw new IllegalArgumentException("Client uploads must be normalized .ogg audio.");
         }
 
         String uploadName = sanitizeSongName(payload.uploadName());
@@ -585,7 +590,7 @@ public final class MusicLibraryService {
         }
         try {
             Files.move(updated.tempPath(), finalPath, StandardCopyOption.REPLACE_EXISTING);
-            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.displayName() + "'. Use /cstmusic createupload to write it to a disc."));
+            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.displayName() + "'. Use the CD Writer Print button to write it to a disc."));
         } catch (IOException exception) {
             deleteQuietly(updated.tempPath());
             throw new IllegalArgumentException("Failed to finish music upload.", exception);
@@ -1230,6 +1235,9 @@ public final class MusicLibraryService {
                 player.sendOverlayMessage(Component.literal("Blueprint CD audio is already ready."));
                 Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
             } else {
+                if (!config.allowServerSideTranscoding) {
+                    throw new IllegalArgumentException("Server-side transcoding is disabled. Use the CD Writer GUI so the client converts the file before upload.");
+                }
                 runFfmpegNormalization(player, source, output, sourceSizeBytes);
             }
             long sizeBytes = safeFileSize(output);
@@ -1248,98 +1256,23 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Preview audio output escapes the server storage root.");
         }
 
-        String ffmpeg = resolveFfmpegExecutable();
-        List<String> command = new ArrayList<>();
-        command.add(ffmpeg);
-        command.add("-y");
-        command.add("-i");
-        command.add(source.toString());
-        command.add("-t");
-        command.add(Integer.toString(previewSeconds));
-        command.add("-vn");
-        command.add("-map");
-        command.add("a:0");
-        command.add("-c:a");
-        command.add("libvorbis");
-        command.add("-b:a");
-        command.add(config.audioBitrate == null || config.audioBitrate.isBlank() ? "128k" : config.audioBitrate);
-        command.add("-ar");
-        command.add(Integer.toString(config.sampleRate <= 0 ? 44100 : config.sampleRate));
-        command.add("-ac");
-        command.add(config.monoDownmix ? "1" : (config.stereoEnabled ? "2" : "1"));
-        command.add(output.toString());
-
         try {
             Files.createDirectories(folder);
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String log = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            int exit = process.waitFor();
-            if (exit != 0) {
-                throw new IllegalArgumentException("FFmpeg failed to create preview audio. " + safeProcessLog(log));
+            if (ffmpegLocator.locate(server.getServerDirectory(), config).isPresent()) {
+                mediaTranscoder.createPreview(resolveFfmpegExecutable(), source, output, config, previewSeconds);
+            } else {
+                Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
             }
             return new NormalizedAudio(normalizedRoot.relativize(output).toString().replace('\\', '/'), safeFileSize(output), sha256(output));
         } catch (IOException exception) {
             throw new IllegalArgumentException("Failed to create preview audio.", exception);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalArgumentException("Preview audio generation was interrupted.", exception);
         }
     }
 
     private void runFfmpegNormalization(ServerPlayer player, Path source, Path output, long sourceSizeBytes) {
         String ffmpeg = resolveFfmpegExecutable();
-
-        List<String> command = new ArrayList<>();
-        command.add(ffmpeg);
-        command.add("-y");
-        command.add("-i");
-        command.add(source.toString());
-        command.add("-vn");
-        command.add("-map");
-        command.add("a:0");
-        command.add("-c:a");
-        command.add("libvorbis");
-        command.add("-b:a");
-        command.add(config.audioBitrate == null || config.audioBitrate.isBlank() ? "128k" : config.audioBitrate);
-        command.add("-ar");
-        command.add(Integer.toString(config.sampleRate <= 0 ? 44100 : config.sampleRate));
-        command.add("-ac");
-        command.add(config.monoDownmix ? "1" : (config.stereoEnabled ? "2" : "1"));
-        command.add(output.toString());
-
-        try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            StringBuilder log = new StringBuilder();
-            Thread logReader = new Thread(() -> {
-                try {
-                    log.append(new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
-                } catch (IOException exception) {
-                    log.append(exception.getMessage());
-                }
-            }, "musicxcst-ffmpeg-log");
-            logReader.setDaemon(true);
-            logReader.start();
-
-            int estimatedSeconds = estimatedConversionSeconds(sourceSizeBytes);
-            long startedAtMillis = System.currentTimeMillis();
-            while (!process.waitFor(1L, TimeUnit.SECONDS)) {
-                int elapsedSeconds = (int) Math.max(1L, (System.currentTimeMillis() - startedAtMillis) / 1000L);
-                int remainingSeconds = Math.max(1, estimatedSeconds - elapsedSeconds);
-                player.sendOverlayMessage(Component.literal("Converting Blueprint CD audio... about " + remainingSeconds + "s left."));
-            }
-
-            int exit = process.exitValue();
-            logReader.join(1000L);
-            if (exit != 0) {
-                throw new IllegalArgumentException("FFmpeg failed to normalize audio. " + safeProcessLog(log.toString()));
-            }
-            player.sendOverlayMessage(Component.literal("Blueprint CD audio is ready."));
-        } catch (IOException exception) {
-            throw new IllegalArgumentException("Failed to run FFmpeg. Check the configured ffmpegPath.", exception);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalArgumentException("FFmpeg normalization was interrupted.", exception);
-        }
+        mediaTranscoder.transcodeToOgg(ffmpeg, source, output, config, message -> player.sendOverlayMessage(Component.literal(message)));
+        player.sendOverlayMessage(Component.literal("Blueprint CD audio is ready."));
     }
 
     private int estimatedConversionSeconds(long sourceSizeBytes) {
@@ -1348,86 +1281,27 @@ public final class MusicLibraryService {
     }
 
     private long probeAudioDurationMillis(Path file) {
-        String ffmpeg = resolveFfmpegExecutable();
-        try {
-            Process process = new ProcessBuilder(ffmpeg, "-hide_banner", "-i", file.toString())
-                    .redirectErrorStream(true)
-                    .start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            process.waitFor();
-            return parseDurationMillis(output);
-        } catch (IOException exception) {
-            Musicxcst.LOGGER.warn("Failed to probe audio duration for '{}': {}", file.getFileName(), exception.getMessage());
-            return 0L;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
+        var ffmpeg = ffmpegLocator.locate(server.getServerDirectory(), config);
+        if (ffmpeg.isEmpty()) {
             return 0L;
         }
+        return mediaTranscoder.probeDurationMillis(ffmpeg.get(), file);
     }
 
     private long parseDurationMillis(String ffmpegOutput) {
-        if (ffmpegOutput == null) {
-            return 0L;
-        }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("Duration:\\s*(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)")
-                .matcher(ffmpegOutput);
-        if (!matcher.find()) {
-            return 0L;
-        }
-
-        long hours = Long.parseLong(matcher.group(1));
-        long minutes = Long.parseLong(matcher.group(2));
-        double seconds = Double.parseDouble(matcher.group(3));
-        return (long) (((hours * 60L + minutes) * 60L + seconds) * 1000.0D);
+        return MediaTranscoder.parseDurationMillis(ffmpegOutput);
     }
 
     private String resolveFfmpegExecutable() {
-        String configured = config.ffmpegPath == null ? "" : config.ffmpegPath.trim();
-        boolean explicitPath = !configured.isBlank() && !"ffmpeg".equalsIgnoreCase(configured);
-        if (explicitPath) {
-            if (isFfmpegAvailable(configured)) {
-                return configured;
-            }
-            throw new IllegalArgumentException("Configured ffmpegPath does not point to a working FFmpeg executable: " + configured);
-        }
-
-        try {
-            Path bundled = BundledFfmpegResolver.resolve(server.getServerDirectory());
-            if (bundled != null && isFfmpegAvailable(bundled.toString())) {
-                return bundled.toString();
-            }
-        } catch (IOException exception) {
-            Musicxcst.LOGGER.warn("Failed to extract bundled FFmpeg: {}", exception.getMessage());
-        }
-
-        if (isFfmpegAvailable("ffmpeg")) {
-            return "ffmpeg";
-        }
-
-        throw new IllegalArgumentException("FFmpeg is required to import this audio format. Add a bundled binary at one of these resource paths: "
-                + BundledFfmpegResolver.supportedResourcePaths()
-                + ", configure ffmpegPath, or import an already-compatible .ogg file.");
+        return ffmpegLocator.require(server.getServerDirectory(), config);
     }
 
     private boolean isFfmpegAvailable(String executable) {
-        try {
-            Process process = new ProcessBuilder(executable, "-version").redirectErrorStream(true).start();
-            return process.waitFor() == 0;
-        } catch (IOException exception) {
-            return false;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
+        return ffmpegLocator.isAvailable(executable);
     }
 
     private String safeProcessLog(String log) {
-        if (log == null || log.isBlank()) {
-            return "No FFmpeg output was captured.";
-        }
-        String scrubbed = log.replace('\\', '/').replaceAll("[A-Za-z]:/[^\\s]+", "<local-path>");
-        return scrubbed.length() > 500 ? scrubbed.substring(0, 500) : scrubbed;
+        return MediaTranscoder.safeProcessLog(log);
     }
 
     private String extension(String fileName) {

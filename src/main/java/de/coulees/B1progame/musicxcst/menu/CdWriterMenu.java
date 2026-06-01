@@ -1,5 +1,6 @@
 package de.coulees.B1progame.musicxcst.menu;
 
+import de.coulees.B1progame.musicxcst.block.entity.CdWriterBlockEntity;
 import de.coulees.B1progame.musicxcst.init.ModBlocks;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.init.ModMenuTypes;
@@ -24,37 +25,45 @@ public final class CdWriterMenu extends AbstractContainerMenu {
     private final Container cdSlots;
     private final ContainerLevelAccess access;
     private final BlockPos pos;
+    private final CdWriterBlockEntity blockEntity;
+    private final boolean clearOnRemoved;
     private boolean converting;
 
     public CdWriterMenu(int containerId, Inventory playerInventory, BlockPos pos) {
-        this(containerId, playerInventory, new SimpleContainer(2), ContainerLevelAccess.NULL, pos);
+        this(containerId, playerInventory, new SimpleContainer(2), ContainerLevelAccess.NULL, pos, null, true);
     }
 
     public CdWriterMenu(int containerId, Inventory playerInventory, ContainerLevelAccess access, BlockPos pos) {
-        this(containerId, playerInventory, new SimpleContainer(2), access, pos);
+        this(containerId, playerInventory, new SimpleContainer(2), access, pos, null, true);
     }
 
-    private CdWriterMenu(int containerId, Inventory playerInventory, Container cdSlots, ContainerLevelAccess access, BlockPos pos) {
+    public CdWriterMenu(int containerId, Inventory playerInventory, CdWriterBlockEntity blockEntity, ContainerLevelAccess access, BlockPos pos) {
+        this(containerId, playerInventory, blockEntity, access, pos, blockEntity, false);
+    }
+
+    private CdWriterMenu(int containerId, Inventory playerInventory, Container cdSlots, ContainerLevelAccess access, BlockPos pos, CdWriterBlockEntity blockEntity, boolean clearOnRemoved) {
         super(ModMenuTypes.CD_WRITER, containerId);
         checkContainerSize(cdSlots, 2);
         this.cdSlots = cdSlots;
         this.access = access;
         this.pos = pos.immutable();
+        this.blockEntity = blockEntity;
+        this.clearOnRemoved = clearOnRemoved;
 
         addSlot(new Slot(cdSlots, INPUT_SLOT, 200, 11) {
             @Override
             public boolean mayPlace(ItemStack stack) {
-                return !converting && stack.getItem() == ModItems.BLUEPRINT_CD;
+                return !isConverting() && stack.getItem() == ModItems.BLUEPRINT_CD;
             }
 
             @Override
             public boolean mayPickup(Player player) {
-                return !converting;
+                return !isConverting();
             }
 
             @Override
             public boolean isActive() {
-                return !converting;
+                return !isConverting();
             }
 
             @Override
@@ -71,12 +80,12 @@ public final class CdWriterMenu extends AbstractContainerMenu {
 
             @Override
             public boolean mayPickup(Player player) {
-                return !converting && hasItem();
+                return !isConverting() && hasItem();
             }
 
             @Override
             public boolean isActive() {
-                return !converting || hasItem();
+                return !isConverting() || hasItem();
             }
 
             @Override
@@ -108,11 +117,14 @@ public final class CdWriterMenu extends AbstractContainerMenu {
     }
 
     public boolean isConverting() {
-        return converting;
+        return converting || (blockEntity != null && blockEntity.isConverting());
     }
 
     public void setConverting(boolean converting) {
         this.converting = converting;
+        if (blockEntity != null) {
+            blockEntity.setConverting(converting);
+        }
         broadcastChanges();
     }
 
@@ -144,7 +156,7 @@ public final class CdWriterMenu extends AbstractContainerMenu {
                 if (!moveItemStackTo(stack, PLAYER_INVENTORY_START, HOTBAR_END, true)) {
                     return ItemStack.EMPTY;
                 }
-            } else if (stack.getItem() == ModItems.BLUEPRINT_CD && !hasOutput() && !converting) {
+            } else if (stack.getItem() == ModItems.BLUEPRINT_CD && !hasOutput() && !isConverting()) {
                 if (!moveItemStackTo(stack, INPUT_SLOT, INPUT_SLOT + 1, false)) {
                     return ItemStack.EMPTY;
                 }
@@ -173,6 +185,8 @@ public final class CdWriterMenu extends AbstractContainerMenu {
     @Override
     public void removed(Player player) {
         super.removed(player);
-        clearContainer(player, cdSlots);
+        if (clearOnRemoved) {
+            clearContainer(player, cdSlots);
+        }
     }
 }
