@@ -1,2 +1,12 @@
-Copyright (c) 2026 B1progame
+MusicXCST License
+
+Copyright (c) 2026 B1progame.
 All rights reserved.
+
+The MusicXCST source code, artwork, models, sounds, and other original project files may not be copied, redistributed, modified, sublicensed, or sold without written permission from the copyright holder, except where a separate file in this repository explicitly says otherwise.
+
+Bundled third-party executables, including FFmpeg binaries, are not owned by the MusicXCST copyright holder. They are distributed under their own upstream licenses and notices. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/` for details.
+
+MusicXCST invokes FFmpeg as a separate executable process. FFmpeg is not linked into the MusicXCST code.
+
+This repository does not grant any rights to upload, distribute, or play copyrighted music. Users and server operators are responsible for ensuring they have the rights to any audio they upload or distribute.

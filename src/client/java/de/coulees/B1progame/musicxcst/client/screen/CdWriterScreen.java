@@ -32,6 +32,8 @@ import java.util.Locale;
 
 public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> {
     private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/gui/cd_writer.png");
+    private static final Identifier PRINT_BUTTON_TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/gui/print_button_with_name.png");
+    private static final Identifier EXPLORER_BUTTON_TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/gui/explorer_button.png");
     private static final int TEXTURE_WIDTH = 512;
     private static final int TEXTURE_HEIGHT = 256;
     private static final int GUI_WIDTH = 276;
@@ -42,7 +44,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int PRINT_BUTTON_HEIGHT = 8;
     private static final int FILE_BUTTON_X = 180;
     private static final int FILE_BUTTON_Y = 35;
-    private static final int FILE_BUTTON_WIDTH = 19;
+    private static final int FILE_BUTTON_WIDTH = 20;
     private static final int FILE_BUTTON_HEIGHT = 20;
     private static final int EDITOR_X = 12;
     private static final int EDITOR_Y = 76;
@@ -110,13 +112,12 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     public void extractBackground(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY, float partialTick) {
         extractTransparentBackground(guiGraphics);
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, leftPos, topPos, 0, 0, GUI_WIDTH, GUI_HEIGHT, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-        renderFileButtonIcon(guiGraphics);
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, EXPLORER_BUTTON_TEXTURE, leftPos + FILE_BUTTON_X, topPos + FILE_BUTTON_Y, 0, 0, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT);
         renderTextureEditor(guiGraphics);
         if (uploading) {
             guiGraphics.centeredText(this.font, progressText.isBlank() ? loadingText() : progressText, leftPos + GUI_WIDTH / 2, topPos - 13, 0xFFFFE680);
         }
-        guiGraphics.fill(leftPos + PRINT_BUTTON_X, topPos + PRINT_BUTTON_Y, leftPos + PRINT_BUTTON_X + PRINT_BUTTON_WIDTH, topPos + PRINT_BUTTON_Y + PRINT_BUTTON_HEIGHT, 0xFF00FEFF);
-        drawScaledCentered(guiGraphics, "Print", leftPos + PRINT_BUTTON_X + PRINT_BUTTON_WIDTH / 2, topPos + PRINT_BUTTON_Y + 1, 0.6F, canWrite() ? 0xFF102222 : 0xFF406060);
+        guiGraphics.blit(RenderPipelines.GUI_TEXTURED, PRINT_BUTTON_TEXTURE, leftPos + PRINT_BUTTON_X, topPos + PRINT_BUTTON_Y, 0, 0, PRINT_BUTTON_WIDTH, PRINT_BUTTON_HEIGHT, PRINT_BUTTON_WIDTH, PRINT_BUTTON_HEIGHT);
     }
 
     @Override
@@ -301,16 +302,6 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         drawScaledCentered(guiGraphics, "Clear", leftPos + 22, topPos + TOOL_Y, 0.55F, 0xFFFFFFFF);
         drawScaledCentered(guiGraphics, "Save", leftPos + 52, topPos + TOOL_Y, 0.55F, 0xFFFFFFFF);
         drawScaledCentered(guiGraphics, "Back", leftPos + 82, topPos + TOOL_Y, 0.55F, 0xFFFFFFFF);
-    }
-
-    private void renderFileButtonIcon(GuiGraphicsExtractor guiGraphics) {
-        int x = leftPos + FILE_BUTTON_X;
-        int y = topPos + FILE_BUTTON_Y;
-        guiGraphics.outline(x + 2, y + 3, 15, 14, 0xFF063F3F);
-        guiGraphics.fill(x + 5, y + 5, x + 11, y + 8, 0xFFFFDA68);
-        guiGraphics.fill(x + 4, y + 8, x + 16, y + 15, 0xFFFFC83D);
-        guiGraphics.fill(x + 5, y + 9, x + 15, y + 14, 0xFFFFE083);
-        guiGraphics.outline(x + 4, y + 8, 12, 7, 0xFF7A5A0B);
     }
 
     private boolean handleTextureEditorClick(int x, int y, int button) {

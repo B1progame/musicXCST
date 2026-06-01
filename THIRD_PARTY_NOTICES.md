@@ -2,11 +2,13 @@
 
 ## FFmpeg
 
-MusicXCST can use FFmpeg for audio probing and transcoding. FFmpeg binaries are not music files and must be distributed under the FFmpeg project's license terms for the exact build you ship.
+MusicXCST can use FFmpeg for audio probing and transcoding. FFmpeg binaries are third-party executables and are not owned by the MusicXCST copyright holder.
 
-For bundling with this repository, prefer a stable release LGPL build of FFmpeg, without `--enable-gpl` and without `--enable-nonfree`. GPL builds may impose GPL obligations on the distributed binary package, and `--enable-nonfree` builds must not be redistributed.
+The bundled Windows binary is expected to come from GyanD FFmpeg builds. The bundled Linux x86_64 binary is expected to come from BtbN FFmpeg builds. Packagers should verify the exact binary, version, license, and configure flags before distributing a jar.
 
-Place the matching FFmpeg license text, source/build URL, version, commit if available, and configure flags under `licenses/ffmpeg/` when bundling binaries. Server owners and pack distributors are responsible for ensuring their FFmpeg binary source, license, and enabled codecs are compatible with their distribution.
+For redistribution, prefer stable release LGPL builds without `--enable-gpl` and without `--enable-nonfree`. GPL builds may impose GPL obligations on the distributed binary package, and `--enable-nonfree` builds must not be redistributed.
+
+Place the matching FFmpeg license text, source/build URL, version, commit if available, configure flags, and checksums under `licenses/ffmpeg/` when bundling binaries.
 
 MusicXCST invokes the `ffmpeg` executable as a separate process. It does not link FFmpeg libraries into the mod jar.
 
