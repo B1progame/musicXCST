@@ -1,6 +1,6 @@
 {
   "model": {
     "type": "minecraft:model",
-    "model": "musicxcst:block/cd_writer"
+    "model": "musicxcst:block/cd_writer_item"
   }
 }

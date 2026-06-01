@@ -9,13 +9,17 @@ import de.coulees.B1progame.musicxcst.data.MusicEntry;
 import de.coulees.B1progame.musicxcst.data.MusicIndexFile;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
+import de.coulees.B1progame.musicxcst.block.entity.CdWriterBlockEntity;
 import de.coulees.B1progame.musicxcst.init.ModItems;
+import de.coulees.B1progame.musicxcst.menu.CdWriterMenu;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkRequestPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
+import de.coulees.B1progame.musicxcst.network.CdWriterDonePayload;
+import de.coulees.B1progame.musicxcst.network.CdWriterWritePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
@@ -34,6 +38,7 @@ import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ContainerLevelAccess;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
@@ -42,7 +47,9 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.Vec3;
 import net.fabricmc.fabric.api.networking.v1.PlayerLookup;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.menu.v1.ExtendedMenuProvider;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -212,15 +219,18 @@ public final class MusicLibraryService {
 
     public String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName) {
         ensureServer();
+        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, player.getInventory().getSelectedItem(), null);
+    }
+
+    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, ItemStack selected, @Nullable Runnable inventoryChanged) {
         String displayName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
             throw new IllegalArgumentException("Invalid hex color. Use RRGGBB or #RRGGBB.");
         }
 
-        ItemStack selected = player.getInventory().getSelectedItem();
         if (selected.getItem() != ModItems.BLUEPRINT_CD) {
-            throw new IllegalArgumentException("Hold a Blueprint CD in your selected slot first.");
+            throw new IllegalArgumentException("Place a Blueprint CD in the CD Writer slot first.");
         }
 
         Path source = uploadedMusicPath(player, uploadedFileName);
@@ -284,6 +294,9 @@ public final class MusicLibraryService {
             if (!player.getInventory().add(written)) {
                 player.drop(written, false);
             }
+        }
+        if (inventoryChanged != null) {
+            inventoryChanged.run();
         }
 
         syncPlayerInventory(player);
@@ -413,6 +426,66 @@ public final class MusicLibraryService {
         }
         if (ServerPlayNetworking.canSend(player, JukeboxSettingsOpenPayload.TYPE)) {
             ServerPlayNetworking.send(player, new JukeboxSettingsOpenPayload(pos.immutable(), isJukeboxLooping(pos)));
+        }
+    }
+
+    public void openCdWriter(ServerPlayer player, BlockPos pos) {
+        ensureServer();
+        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
+            return;
+        }
+        player.openMenu(new ExtendedMenuProvider<BlockPos>() {
+            @Override
+            public BlockPos getScreenOpeningData(ServerPlayer serverPlayer) {
+                return pos.immutable();
+            }
+
+            @Override
+            public Component getDisplayName() {
+                return Component.literal("CD Writer");
+            }
+
+            @Override
+            public CdWriterMenu createMenu(int containerId, Inventory inventory, Player menuPlayer) {
+                return new CdWriterMenu(containerId, inventory, ContainerLevelAccess.create(menuPlayer.level(), pos), pos);
+            }
+        });
+    }
+
+    public void writeCdFromUploadedFile(ServerPlayer player, CdWriterWritePayload payload) {
+        ensureServer();
+        BlockPos pos = payload.pos().immutable();
+        if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
+            player.sendSystemMessage(Component.literal("CD Writer is no longer available."));
+            finishCdWriterClient(player, pos);
+            return;
+        }
+        try {
+            if (!(player.containerMenu instanceof CdWriterMenu menu) || !menu.pos().equals(pos)) {
+                player.sendSystemMessage(Component.literal("Open the CD Writer before writing a disc."));
+                return;
+            }
+            if (menu.hasOutput()) {
+                player.sendSystemMessage(Component.literal("Take the finished CD out of the CD Writer first."));
+                return;
+            }
+            menu.setConverting(true);
+            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), menu.inputStack(), menu::inputChanged);
+            menu.moveInputToOutput();
+            player.sendSystemMessage(Component.literal(result));
+        } catch (IllegalArgumentException exception) {
+            player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
+        } finally {
+            if (player.containerMenu instanceof CdWriterMenu menu && menu.pos().equals(pos)) {
+                menu.setConverting(false);
+            }
+            finishCdWriterClient(player, pos);
+        }
+    }
+
+    private void finishCdWriterClient(ServerPlayer player, BlockPos pos) {
+        if (ServerPlayNetworking.canSend(player, CdWriterDonePayload.TYPE)) {
+            ServerPlayNetworking.send(player, new CdWriterDonePayload(pos));
         }
     }
 

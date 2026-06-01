@@ -3,17 +3,21 @@ package de.coulees.B1progame.musicxcst.client;
 import de.coulees.B1progame.musicxcst.client.audio.ClientAudioDownloadManager;
 import de.coulees.B1progame.musicxcst.client.audio.CustomAudioEngine;
 import de.coulees.B1progame.musicxcst.client.render.CdWriterBlockRenderer;
+import de.coulees.B1progame.musicxcst.client.screen.CdWriterScreen;
 import de.coulees.B1progame.musicxcst.client.screen.JukeboxSettingsScreen;
 import de.coulees.B1progame.musicxcst.init.ModBlockEntities;
+import de.coulees.B1progame.musicxcst.init.ModMenuTypes;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadRequestPayload;
+import de.coulees.B1progame.musicxcst.network.CdWriterDonePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
@@ -24,7 +28,13 @@ public class MusicxcstClient implements ClientModInitializer {
     public void onInitializeClient() {
         ClientMusicUploader.register();
         BlockEntityRenderers.register(ModBlockEntities.CD_WRITER, CdWriterBlockRenderer::new);
+        MenuScreens.register(ModMenuTypes.CD_WRITER, CdWriterScreen::new);
         ClientPlayNetworking.registerGlobalReceiver(ClientMusicUploadRequestPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientMusicUploader.startUpload(context.client(), payload.name(), payload.path())));
+        ClientPlayNetworking.registerGlobalReceiver(CdWriterDonePayload.TYPE, (payload, context) -> context.client().execute(() -> {
+            if (context.client().screen instanceof CdWriterScreen screen) {
+                screen.finishConverting(payload.pos());
+            }
+        }));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleStart(payload)));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxSettingsOpenPayload.TYPE, (payload, context) -> context.client().execute(() -> context.client().setScreen(new JukeboxSettingsScreen(payload.pos(), payload.looping()))));
         ClientPlayNetworking.registerGlobalReceiver(AudioCachePrunePayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleCachePrune(payload)));
