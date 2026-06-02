@@ -69,7 +69,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int DESIGN_PREVIEW_X = DESIGN_PANEL_X + 10;
     private static final int DESIGN_PREVIEW_Y = DESIGN_PANEL_Y + 10;
     private static final int DESIGN_PREVIEW_CELL = 2;
-    private static final int THEME_X = DESIGN_PANEL_X + 52;
+    private static final int THEME_X = DESIGN_PANEL_X + 48;
     private static final int THEME_Y = DESIGN_PANEL_Y + 23;
     private static final int THEME_SIZE = 6;
     private static final int COLOR_PICKER_X = DESIGN_PANEL_X + 42;

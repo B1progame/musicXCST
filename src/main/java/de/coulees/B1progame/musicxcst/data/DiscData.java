@@ -16,10 +16,12 @@ import java.util.Optional;
 public final class DiscData {
     public static final int DESIGN_SIZE = 16;
     public static final int DESIGN_PIXELS = DESIGN_SIZE * DESIGN_SIZE;
-    public static final String DESIGN_ID_PREFIX = "MXC1:";
+    public static final String DESIGN_ID_PREFIX = "MXCST1.";
+    private static final String PALETTE_DESIGN_ID_PREFIX = "MXC1:";
     private static final String LEGACY_DESIGN_ID_PREFIX = "MXC16.";
     private static final String PALETTE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-    public static final int DESIGN_ID_MAX_LENGTH = 1400;
+    public static final int DESIGN_ID_MAX_LENGTH = 1500;
+    private static final int DESIGN_PAYLOAD_BYTES = 1 + DESIGN_PIXELS * Integer.BYTES;
     private static final Identifier VALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd");
     private static final Identifier INVALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd_invalid");
 
@@ -207,6 +209,16 @@ public final class DiscData {
 
     public static String encodeDesignId(int[] pixels) {
         int[] sanitized = sanitizeDesign(pixels);
+        ByteBuffer buffer = ByteBuffer.allocate(DESIGN_PAYLOAD_BYTES);
+        buffer.put((byte) DESIGN_SIZE);
+        for (int pixel : sanitized) {
+            buffer.putInt(pixel);
+        }
+        return DESIGN_ID_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
+    }
+
+    private static String encodePaletteDesignId(int[] pixels) {
+        int[] sanitized = sanitizeDesign(pixels);
         int[] palette = new int[Math.min(DESIGN_PIXELS, PALETTE_CHARS.length())];
         int paletteSize = 0;
         StringBuilder body = new StringBuilder(DESIGN_PIXELS);
@@ -243,7 +255,7 @@ public final class DiscData {
             }
             header.append(String.format("%06X", palette[index]));
         }
-        return DESIGN_ID_PREFIX + header + ";" + body;
+        return PALETTE_DESIGN_ID_PREFIX + header + ";" + body;
     }
 
     public static Optional<int[]> decodeDesignId(String designId) {
@@ -258,17 +270,40 @@ public final class DiscData {
         if (trimmed.startsWith(LEGACY_DESIGN_ID_PREFIX)) {
             return decodeLegacyDesignId(trimmed);
         }
+        if (trimmed.startsWith(PALETTE_DESIGN_ID_PREFIX)) {
+            return decodePaletteDesignId(trimmed);
+        }
         if (!trimmed.startsWith(DESIGN_ID_PREFIX)) {
             return Optional.empty();
         }
 
-        int separator = trimmed.indexOf(';', DESIGN_ID_PREFIX.length());
+        String encoded = trimmed.substring(DESIGN_ID_PREFIX.length());
+        try {
+            byte[] bytes = Base64.getUrlDecoder().decode(encoded);
+            if (bytes.length != DESIGN_PAYLOAD_BYTES || (bytes[0] & 0xFF) != DESIGN_SIZE) {
+                return Optional.empty();
+            }
+
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            buffer.get();
+            int[] pixels = new int[DESIGN_PIXELS];
+            for (int index = 0; index < pixels.length; index++) {
+                pixels[index] = sanitizeDesignPixel(buffer.getInt());
+            }
+            return Optional.of(pixels);
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<int[]> decodePaletteDesignId(String designId) {
+        int separator = designId.indexOf(';', PALETTE_DESIGN_ID_PREFIX.length());
         if (separator < 0) {
             return Optional.empty();
         }
 
-        String paletteText = trimmed.substring(DESIGN_ID_PREFIX.length(), separator);
-        String body = trimmed.substring(separator + 1);
+        String paletteText = designId.substring(PALETTE_DESIGN_ID_PREFIX.length(), separator);
+        String body = designId.substring(separator + 1);
         if (body.length() != DESIGN_PIXELS) {
             return Optional.empty();
         }
