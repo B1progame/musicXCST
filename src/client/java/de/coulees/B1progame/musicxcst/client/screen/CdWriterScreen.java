@@ -80,14 +80,14 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 44;
     private static final int ADVANCED_BUTTON_WIDTH = 27;
     private static final int ADVANCED_BUTTON_HEIGHT = 11;
-    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 1;
-    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 95;
-    private static final int IMPORT_BOX_WIDTH = 62;
+    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 8;
+    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 67;
+    private static final int IMPORT_BOX_WIDTH = 82;
     private static final int IMPORT_BOX_HEIGHT = 10;
-    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 78;
-    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 75;
-    private static final int IMPORT_BUTTON_WIDTH = 10;
-    private static final int IMPORT_BUTTON_HEIGHT = 10;
+    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 74;
+    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 56;
+    private static final int IMPORT_BUTTON_WIDTH = 11;
+    private static final int IMPORT_BUTTON_HEIGHT = 11;
     private static final String EDITOR_RESOURCE = "/assets/musicxcst/editor/disc_texture_editor.html";
     private static final long EDITOR_TIMEOUT_MILLIS = 10L * 60L * 1000L;
     private static final int MAX_CALLBACK_BYTES = 2048;
@@ -154,7 +154,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         this.designIdBox = addRenderableWidget(new ScaledEditBox(this.font, leftPos + IMPORT_BOX_X, topPos + IMPORT_BOX_Y, IMPORT_BOX_WIDTH, IMPORT_BOX_HEIGHT, Component.literal("Design ID")));
         this.designIdBox.setBordered(false);
         this.designIdBox.setMaxLength(DiscData.DESIGN_ID_MAX_LENGTH);
-        this.designIdBox.setSuggestion("Design ID");
+        this.designIdBox.setSuggestion("ID");
         restoreState();
         if (this.designIdBox.getValue().isBlank()) {
             updateDesignIdBox();
