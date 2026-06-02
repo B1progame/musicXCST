@@ -25,15 +25,25 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.tinyfd.TinyFileDialogs;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
+import java.security.SecureRandom;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> {
     private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "textures/gui/cd_writer.png");
@@ -59,21 +69,32 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int DESIGN_PREVIEW_X = DESIGN_PANEL_X + 10;
     private static final int DESIGN_PREVIEW_Y = DESIGN_PANEL_Y + 10;
     private static final int DESIGN_PREVIEW_CELL = 2;
-    private static final int THEME_X = DESIGN_PANEL_X + 40;
+    private static final int THEME_X = DESIGN_PANEL_X + 52;
     private static final int THEME_Y = DESIGN_PANEL_Y + 23;
     private static final int THEME_SIZE = 6;
-    private static final int ADVANCED_BUTTON_X = DESIGN_PANEL_X + 55;
-    private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 46;
-    private static final int ADVANCED_BUTTON_WIDTH = 16;
-    private static final int ADVANCED_BUTTON_HEIGHT = 7;
-    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 10;
-    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 64;
-    private static final int IMPORT_BOX_WIDTH = 49;
+    private static final int COLOR_PICKER_X = DESIGN_PANEL_X + 42;
+    private static final int COLOR_PICKER_Y = DESIGN_PANEL_Y + 39;
+    private static final int COLOR_PICKER_WIDTH = 31;
+    private static final int COLOR_PICKER_HEIGHT = 12;
+    private static final int ADVANCED_BUTTON_X = DESIGN_PANEL_X + 61;
+    private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 49;
+    private static final int ADVANCED_BUTTON_WIDTH = 22;
+    private static final int ADVANCED_BUTTON_HEIGHT = 10;
+    private static final int RESET_BUTTON_X = DESIGN_PANEL_X + 76;
+    private static final int RESET_BUTTON_Y = DESIGN_PANEL_Y + 59;
+    private static final int RESET_BUTTON_WIDTH = 10;
+    private static final int RESET_BUTTON_HEIGHT = 10;
+    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 4;
+    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 72;
+    private static final int IMPORT_BOX_WIDTH = 62;
     private static final int IMPORT_BOX_HEIGHT = 10;
-    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 63;
-    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 64;
+    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 68;
+    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 72;
     private static final int IMPORT_BUTTON_WIDTH = 15;
     private static final int IMPORT_BUTTON_HEIGHT = 10;
+    private static final String EDITOR_RESOURCE = "/assets/musicxcst/editor/disc_texture_editor.html";
+    private static final long EDITOR_TIMEOUT_MILLIS = 10L * 60L * 1000L;
+    private static final int MAX_CALLBACK_BYTES = 2048;
     private static final String[] SUPPORTED_FILE_PATTERNS = {
             "*.mp3", "*.mp4", "*.wav", "*.ogg", "*.flac", "*.m4a", "*.aac", "*.webm", "*.avi"
     };
@@ -96,6 +117,10 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private String progressText = "";
     private Path selectedFile;
     private boolean updatingPathBox;
+    private HttpServer editorServer;
+    private ExecutorService editorExecutor;
+    private String editorToken;
+    private long editorExpiresAtMillis;
 
     public CdWriterScreen(CdWriterMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title, GUI_WIDTH, GUI_HEIGHT);
@@ -139,6 +164,10 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     @Override
     protected void containerTick() {
         ticks++;
+        if (editorServer != null && System.currentTimeMillis() > editorExpiresAtMillis) {
+            stopEditorServer();
+            message("Disc design editor session expired.");
+        }
     }
 
     @Override
@@ -241,6 +270,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     @Override
     public void removed() {
         saveState();
+        stopEditorServer();
         super.removed();
     }
 
@@ -318,6 +348,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         int y0 = topPos + DESIGN_PANEL_Y;
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, DESIGN_PANEL_TEXTURE, x0, y0, 0, 0, DESIGN_PANEL_WIDTH, DESIGN_PANEL_HEIGHT, DESIGN_PANEL_WIDTH, DESIGN_PANEL_HEIGHT);
         renderDiscPreview(guiGraphics, DESIGN_PREVIEW_X, DESIGN_PREVIEW_Y, DESIGN_PREVIEW_CELL);
+        renderThemeSwatches(guiGraphics);
+        drawScaledCentered(guiGraphics, "Import", leftPos + IMPORT_BUTTON_X + IMPORT_BUTTON_WIDTH / 2, topPos + IMPORT_BUTTON_Y + 2, 0.45F, 0xFFFFFFFF);
     }
 
     private boolean handleTextureEditorClick(int x, int y, int button) {
@@ -334,8 +366,20 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             }
         }
 
+        if (inside(x, y, COLOR_PICKER_X, COLOR_PICKER_Y, COLOR_PICKER_WIDTH, COLOR_PICKER_HEIGHT)) {
+            openColorPicker();
+            return true;
+        }
+
         if (inside(x, y, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT)) {
             openAdvancedEditor();
+            return true;
+        }
+
+        if (inside(x, y, RESET_BUTTON_X, RESET_BUTTON_Y, RESET_BUTTON_WIDTH, RESET_BUTTON_HEIGHT)) {
+            resetWorkingDesign();
+            saveWorkingDesign();
+            message("Reset disc design.");
             return true;
         }
 
@@ -362,11 +406,11 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
                 guiGraphics.fill(previewX + px * cell, previewY + py * cell, previewX + (px + 1) * cell, previewY + (py + 1) * cell, color);
             }
         }
-        guiGraphics.outline(previewX - 1, previewY - 1, DiscData.DESIGN_SIZE * cell + 2, DiscData.DESIGN_SIZE * cell + 2, 0xFFE8D7EF);
+        guiGraphics.outline(previewX - 1, previewY - 1, DiscData.DESIGN_SIZE * cell + 2, DiscData.DESIGN_SIZE * cell + 2, 0xFF000000);
     }
 
     private void applyTheme(int color) {
-        int[] theme = themedDesign(color);
+        int[] theme = DiscData.themedBlueprintDesign(color);
         System.arraycopy(theme, 0, discPixels, 0, discPixels.length);
         selectedColor = color;
         saveWorkingDesign();
@@ -401,14 +445,18 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             Path editor = client.gameDirectory.toPath()
                     .resolve("config")
                     .resolve(Musicxcst.MOD_ID)
-                    .resolve("disc-design-editor.html")
+                    .resolve("editor")
+                    .resolve("disc_texture_editor.html")
                     .normalize();
-            Files.createDirectories(editor.getParent());
-            Files.writeString(editor, advancedEditorHtml(DiscData.encodeDesignId(discPixels)), StandardCharsets.UTF_8);
-            Util.getPlatform().openUri(editor.toUri());
-            message("Opened local disc design editor. Paste the finished Design ID back here and press Import.");
+            copyEditorResource(editor);
+            int port = startEditorServer(client);
+            String designId = DiscData.encodeDesignId(discPixels);
+            String uri = editor.toUri() + "?port=" + port + "&token=" + editorToken + "&design=" + urlEncode(designId);
+            Util.getPlatform().openUri(URI.create(uri));
+            message("Opened local disc design editor. Finish will import automatically; manual Design ID import still works.");
         } catch (IOException exception) {
-            message("Could not write the local design editor: " + exception.getMessage());
+            stopEditorServer();
+            message("Could not open the local design editor: " + exception.getMessage());
         }
     }
 
@@ -418,255 +466,144 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         }
     }
 
-    private static int[] themedDesign(int accentColor) {
-        int[] pixels = new int[DiscData.DESIGN_PIXELS];
-        int center = DiscData.DESIGN_SIZE / 2;
-        int dark = darken(accentColor, 0.28F);
-        int mid = darken(accentColor, 0.70F);
-        for (int y = 0; y < DiscData.DESIGN_SIZE; y++) {
-            for (int x = 0; x < DiscData.DESIGN_SIZE; x++) {
-                int dx = x - center;
-                int dy = y - center;
-                int distanceSquared = dx * dx + dy * dy;
-                int index = y * DiscData.DESIGN_SIZE + x;
-                if (distanceSquared <= 49) {
-                    pixels[index] = 0xFF000000 | dark;
-                }
-                if (distanceSquared <= 35) {
-                    pixels[index] = 0xFF000000 | accentColor;
-                }
-                if (distanceSquared <= 15) {
-                    pixels[index] = 0xFF000000 | mid;
-                }
-                if (distanceSquared <= 5) {
-                    pixels[index] = 0xFFF8FAFC;
-                }
-            }
+    private void renderThemeSwatches(GuiGraphicsExtractor guiGraphics) {
+        for (int index = 0; index < THEME_COLORS.length; index++) {
+            int sx = leftPos + THEME_X + (index % 3) * 11;
+            int sy = topPos + THEME_Y + (index / 3) * 11;
+            guiGraphics.fill(sx, sy, sx + THEME_SIZE, sy + THEME_SIZE, 0xFF000000 | THEME_COLORS[index]);
+            guiGraphics.outline(sx - 1, sy - 1, THEME_SIZE + 2, THEME_SIZE + 2, selectedColor == THEME_COLORS[index] ? 0xFFFFFFFF : 0xFF202020);
         }
-        return pixels;
     }
 
-    private static int darken(int rgb, float factor) {
-        int red = Math.max(0, Math.min(255, Math.round(((rgb >> 16) & 0xFF) * factor)));
-        int green = Math.max(0, Math.min(255, Math.round(((rgb >> 8) & 0xFF) * factor)));
-        int blue = Math.max(0, Math.min(255, Math.round((rgb & 0xFF) * factor)));
-        return (red << 16) | (green << 8) | blue;
+    private void copyEditorResource(Path editor) throws IOException {
+        Files.createDirectories(editor.getParent());
+        try (InputStream stream = CdWriterScreen.class.getResourceAsStream(EDITOR_RESOURCE)) {
+            if (stream == null) {
+                throw new IOException("Missing editor resource " + EDITOR_RESOURCE);
+            }
+            Files.copy(stream, editor, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
-    private static String advancedEditorHtml(String initialDesignId) {
-        return """
-                <!doctype html>
-                <html lang="en">
-                <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width,initial-scale=1">
-                <title>MusicXCST Disc Design Editor</title>
-                <style>
-                :root{color-scheme:dark;font-family:Arial,sans-serif;background:#0d1116;color:#d6dee8}
-                body{margin:0;height:100vh;overflow:hidden;background:#0d1116}
-                header{height:32px;background:#181d24;border-bottom:1px solid #2b3440;display:flex;align-items:center;gap:18px;padding:0 12px;color:#b9c4d0}
-                header .tab{height:32px;display:flex;align-items:center;border-bottom:2px solid transparent;padding:0 8px}
-                header .tab.active{color:#fff;border-color:#2f80ff;background:#202832}
-                main{height:calc(100vh - 56px);display:grid;grid-template-columns:46px 1fr 320px}
-                .toolbar{background:#151a21;border-right:1px solid #2b3440;padding:8px 6px;display:flex;flex-direction:column;gap:7px}
-                .tool{height:32px;border-radius:3px;padding:0;font-weight:700}
-                .stage{display:grid;place-items:center;background:#10151a}
-                .canvasWrap{padding:42px;background:#0e1318;border:1px solid #27313c;box-shadow:inset 0 0 0 1px #151c24}
-                canvas{image-rendering:pixelated;background:#111820;border:1px solid #26323d}
-                aside{background:#1a2028;border-left:1px solid #2d3844;display:grid;grid-template-rows:auto auto auto 1fr;min-width:0}
-                .panel{border-bottom:1px solid #2d3844;padding:10px}
-                h1,h2{font-size:13px;letter-spacing:.04em;font-weight:400;color:#aeb9c6;margin:0 0 8px;text-transform:uppercase}
-                button,input,textarea{font:13px Arial,sans-serif}
-                button{background:#222a34;color:#d9e0e8;border:1px solid #3a4653;padding:7px 9px;cursor:pointer}
-                button:hover,button.active{border-color:#2f80ff;background:#283342}
-                input[type=color]{width:56px;height:32px;background:#222a34;border:1px solid #3a4653}
-                textarea{width:100%;height:126px;box-sizing:border-box;background:#111820;color:#d9e0e8;border:1px solid #3a4653;padding:8px;resize:vertical;font-family:Consolas,monospace;font-size:12px}
-                .row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
-                .hint{color:#8f9ba8;font-size:12px;line-height:1.35}
-                .channels{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;color:#c9d2dc;text-align:center}
-                .channels span{background:#18202a;padding:5px 0;border-bottom:2px solid #2f80ff}
-                .keys{display:grid;grid-template-columns:54px 1fr;gap:5px;color:#aeb9c6;font-size:12px}
-                .key{background:#101820;border:1px solid #34404d;text-align:center;padding:4px 0;color:#fff}
-                footer{height:23px;background:#181d24;border-top:1px solid #2b3440;display:flex;justify-content:space-between;align-items:center;padding:0 12px;color:#8f9ba8;font-size:12px}
-                </style>
-                </head>
-                <body>
-                <header><div class="tab active">Texture</div><div class="tab">Paint</div><div class="tab">Preview</div><div>MusicXCST Disc Texture Editor</div></header>
-                <main>
-                  <nav class="toolbar">
-                    <button id="draw" class="tool active" title="Brush (B)">B</button>
-                    <button id="erase" class="tool" title="Eraser (E)">E</button>
-                    <button id="pick" class="tool" title="Color Picker (Alt)">Alt</button>
-                  </nav>
-                  <section class="stage">
-                    <div class="canvasWrap"><canvas id="grid" width="720" height="720" aria-label="16 by 16 disc pixel grid"></canvas></div>
-                  </section>
-                  <aside>
-                  <section class="panel">
-                    <h1>Color</h1>
-                    <div class="row">
-                      <input id="color" type="color" value="#38bdf8">
-                      <button id="draw2" class="active">Brush</button>
-                      <button id="erase2">Eraser</button>
-                    </div>
-                    <div class="channels"><span id="r">0</span><span id="g">0</span><span id="b">0</span></div>
-                  </section>
-                  <section class="panel">
-                    <h2>Tools</h2>
-                    <div class="row">
-                      <button id="clear">Clear</button>
-                      <button id="reset">Reset</button>
-                      <button id="finish">Finish</button>
-                    </div>
-                  </section>
-                  <section class="panel">
-                    <h2>Shortcuts</h2>
-                    <div class="keys"><div class="key">B</div><div>Brush</div><div class="key">E</div><div>Eraser</div><div class="key">Alt</div><div>Color picker</div></div>
-                  </section>
-                  <section class="panel">
-                    <h2>Design ID</h2>
-                    <textarea id="output" spellcheck="false" placeholder="Click Finish to generate a Design ID."></textarea>
-                    <div class="hint">Compact palette code. Paste it into the CD Writer GUI and press Import. This file is local and offline.</div>
-                  </section>
-                  </aside>
-                </main>
-                <footer><span>texture</span><span>100%</span></footer>
-                <script>
-                const PREFIX="MXC1:";
-                const LEGACY="MXC16.";
-                const CHARS="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-                const SIZE=16;
-                const initial="__INITIAL_ID__";
-                const canvas=document.getElementById("grid");
-                const ctx=canvas.getContext("2d");
-                const color=document.getElementById("color");
-                const output=document.getElementById("output");
-                let mode="draw";
-                let dragging=false;
-                let pixels=decode(initial)||defaultPixels();
-                function defaultPixels(){
-                  const p=new Array(SIZE*SIZE).fill(0);
-                  const rows=[
-                    "................","................","................",".....AAAAA......",
-                    "..AAABBBBBAAA...",".ABBBBAAABBBBA..","ABBBBBABBABBBBA.",
-                    "ABBBBBAAABBBBBA.","ABBBBBABBABBBBA.","AABBBBAAABBBBAA.",
-                    ".AAAABBBBBAAAA..","..AAAAAAAAAAA...",".....AAAAA......",
-                    "................","................","................"
-                  ];
-                  const colors={A:0xff212121|0,B:0xff616161|0};
-                  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
-                    const ch=rows[y][x];
-                    p[y*SIZE+x]=colors[ch]||0;
-                  }
-                  return p;
-                }
-                function draw(){
-                  ctx.clearRect(0,0,720,720);
-                  const cell=720/SIZE;
-                  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
-                    const v=pixels[y*SIZE+x]>>>0;
-                    if((v>>>24)===0){ctx.fillStyle=((x+y)&1)?"#2b2230":"#4a3c52";}
-                    else{ctx.fillStyle="#"+(v&0xffffff).toString(16).padStart(6,"0");}
-                    ctx.fillRect(x*cell,y*cell,cell,cell);
-                    ctx.strokeStyle="rgba(255,255,255,.08)";
-                    ctx.strokeRect(x*cell,y*cell,cell,cell);
-                  }
-                }
-                function pos(e){
-                  const r=canvas.getBoundingClientRect();
-                  return {x:Math.max(0,Math.min(15,Math.floor((e.clientX-r.left)/(r.width/SIZE)))),y:Math.max(0,Math.min(15,Math.floor((e.clientY-r.top)/(r.height/SIZE))))};
-                }
-                function paint(e){
-                  const p=pos(e);
-                  pixels[p.y*SIZE+p.x]=mode==="erase"?0:(0xff000000|parseInt(color.value.slice(1),16));
-                  draw();
-                }
-                function setMode(next){
-                  mode=next;
-                  document.getElementById("draw").classList.toggle("active",mode==="draw");
-                  document.getElementById("draw2").classList.toggle("active",mode==="draw");
-                  document.getElementById("erase").classList.toggle("active",mode==="erase");
-                  document.getElementById("erase2").classList.toggle("active",mode==="erase");
-                }
-                function colorRgb(){
-                  const v=parseInt(color.value.slice(1),16);
-                  document.getElementById("r").textContent=(v>>16)&255;
-                  document.getElementById("g").textContent=(v>>8)&255;
-                  document.getElementById("b").textContent=v&255;
-                }
-                function encode(){
-                  const palette=[], body=[];
-                  for(const raw of pixels){
-                    const v=raw>>>0;
-                    if((v>>>24)===0){body.push(".");continue}
-                    const rgb=(v&0xffffff).toString(16).padStart(6,"0").toUpperCase();
-                    let i=palette.indexOf(rgb);
-                    if(i<0){palette.push(rgb);i=palette.length-1}
-                    body.push(CHARS[i]);
-                  }
-                  return PREFIX+palette.join(",")+";"+body.join("");
-                }
-                function decode(id){
-                  if(!id||id.length>1400)return null;
-                  if(id.startsWith(PREFIX)){
-                    try{
-                      const cut=id.indexOf(";");
-                      if(cut<0)return null;
-                      const palette=id.slice(PREFIX.length,cut).split(",").filter(Boolean);
-                      const body=id.slice(cut+1);
-                      if(body.length!==SIZE*SIZE)return null;
-                      return [...body].map(ch=>{
-                        if(ch==="."||ch===" ")return 0;
-                        const i=CHARS.indexOf(ch);
-                        if(i<0||i>=palette.length)throw new Error("bad index");
-                        return 0xff000000|parseInt(palette[i],16);
-                      });
-                    }catch(e){return null;}
-                  }
-                  if(!id.startsWith(LEGACY))return null;
-                  try{
-                    let s=id.slice(LEGACY.length).replaceAll("-","+").replaceAll("_","/");
-                    while(s.length%4)s+="=";
-                    const bin=atob(s);
-                    if(bin.length!==SIZE*SIZE*4)return null;
-                    const bytes=new Uint8Array(bin.length);
-                    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
-                    const view=new DataView(bytes.buffer);
-                    const arr=new Array(SIZE*SIZE);
-                    for(let i=0;i<arr.length;i++){
-                      const v=view.getInt32(i*4,false);
-                      arr[i]=((v>>>24)===0)?0:(0xff000000|(v&0xffffff));
-                    }
-                    return arr;
-                  }catch(e){return null;}
-                }
-                canvas.addEventListener("mousedown",e=>{dragging=true;paint(e)});
-                canvas.addEventListener("mousemove",e=>{if(dragging)paint(e)});
-                window.addEventListener("mouseup",()=>dragging=false);
-                document.getElementById("draw").onclick=()=>setMode("draw");
-                document.getElementById("draw2").onclick=()=>setMode("draw");
-                document.getElementById("erase").onclick=()=>setMode("erase");
-                document.getElementById("erase2").onclick=()=>setMode("erase");
-                document.getElementById("pick").onclick=()=>color.click();
-                document.getElementById("clear").onclick=()=>{pixels.fill(0);draw()};
-                document.getElementById("reset").onclick=()=>{pixels=defaultPixels();draw()};
-                document.getElementById("finish").onclick=async()=>{
-                  const id=encode();
-                  output.value=id;
-                  try{await navigator.clipboard.writeText(id)}catch(e){}
-                };
-                color.addEventListener("input",colorRgb);
-                window.addEventListener("keydown",event=>{
-                  if(event.key==="b"||event.key==="B"){setMode("draw");event.preventDefault();}
-                  if(event.key==="e"||event.key==="E"){setMode("erase");event.preventDefault();}
-                  if(event.key==="Alt"){color.click();event.preventDefault();}
-                });
-                colorRgb();
-                draw();
-                </script>
-                </body>
-                </html>
-                """.replace("__INITIAL_ID__", initialDesignId);
+    private int startEditorServer(Minecraft client) throws IOException {
+        stopEditorServer();
+        editorToken = randomToken();
+        editorExpiresAtMillis = System.currentTimeMillis() + EDITOR_TIMEOUT_MILLIS;
+        editorServer = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 1);
+        editorServer.createContext("/finish", exchange -> handleEditorFinish(client, exchange));
+        editorExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "musicxcst-disc-editor-callback");
+            thread.setDaemon(true);
+            return thread;
+        });
+        editorServer.setExecutor(editorExecutor);
+        editorServer.start();
+        return editorServer.getAddress().getPort();
+    }
+
+    private void handleEditorFinish(Minecraft client, HttpExchange exchange) throws IOException {
+        try {
+            addCors(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendEditorResponse(exchange, 204, "");
+                return;
+            }
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendEditorResponse(exchange, 405, "POST required.");
+                return;
+            }
+
+            String body = readSmallBody(exchange);
+            Map<String, String> values = parseFormBody(body);
+            if (!String.valueOf(editorToken).equals(values.get("token"))) {
+                sendEditorResponse(exchange, 403, "Invalid editor token.");
+                return;
+            }
+
+            String designId = values.getOrDefault("design", "");
+            var decoded = DiscData.decodeDesignId(designId);
+            if (decoded.isEmpty()) {
+                sendEditorResponse(exchange, 400, "Invalid Design ID.");
+                return;
+            }
+
+            int[] pixels = decoded.get();
+            client.execute(() -> {
+                System.arraycopy(pixels, 0, discPixels, 0, discPixels.length);
+                selectedColor = textureColor(pixels);
+                saveWorkingDesign();
+                message("Design imported into Minecraft.");
+                stopEditorServer();
+            });
+            sendEditorResponse(exchange, 200, "Design imported into Minecraft.");
+        } catch (IllegalArgumentException exception) {
+            addCors(exchange);
+            sendEditorResponse(exchange, 400, exception.getMessage());
+        }
+    }
+
+    private String readSmallBody(HttpExchange exchange) throws IOException {
+        byte[] bytes = exchange.getRequestBody().readNBytes(MAX_CALLBACK_BYTES + 1);
+        if (bytes.length > MAX_CALLBACK_BYTES) {
+            throw new IllegalArgumentException("Callback body is too large.");
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static Map<String, String> parseFormBody(String body) {
+        Map<String, String> values = new HashMap<>();
+        for (String part : body.split("&")) {
+            int equals = part.indexOf('=');
+            if (equals <= 0) {
+                continue;
+            }
+            String key = URLDecoder.decode(part.substring(0, equals), StandardCharsets.UTF_8);
+            String value = URLDecoder.decode(part.substring(equals + 1), StandardCharsets.UTF_8);
+            values.put(key, value);
+        }
+        return values;
+    }
+
+    private void sendEditorResponse(HttpExchange exchange, int status, String text) throws IOException {
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream stream = exchange.getResponseBody()) {
+            stream.write(bytes);
+        }
+    }
+
+    private void addCors(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    private void stopEditorServer() {
+        if (editorServer != null) {
+            editorServer.stop(0);
+            editorServer = null;
+        }
+        if (editorExecutor != null) {
+            editorExecutor.shutdownNow();
+            editorExecutor = null;
+        }
+        editorToken = null;
+        editorExpiresAtMillis = 0L;
+    }
+
+    private static String randomToken() {
+        byte[] bytes = new byte[24];
+        new SecureRandom().nextBytes(bytes);
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(String.format(Locale.ROOT, "%02x", value));
+        }
+        return builder.toString();
+    }
+
+    private static String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private void openFilePicker() {
@@ -689,7 +626,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             if (selected != null && selected.matches("#?[0-9a-fA-F]{6}")) {
                 String normalized = selected.startsWith("#") ? selected.substring(1) : selected;
                 int color = Integer.parseInt(normalized, 16);
-                client.execute(() -> selectedColor = color);
+                client.execute(() -> applyTheme(color));
             }
         }, "musicxcst-color-picker");
         pickerThread.setDaemon(true);

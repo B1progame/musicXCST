@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MusicXCST Disc Texture Editor</title>
+<style>
+:root{color-scheme:dark;font-family:Arial,sans-serif;background:#0d1116;color:#d6dee8}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;overflow:hidden;background:#0d1116}
+header{height:32px;background:#181d24;border-bottom:1px solid #2b3440;display:flex;align-items:center;gap:18px;padding:0 12px;color:#b9c4d0}
+header .tab{height:32px;display:flex;align-items:center;border-bottom:2px solid transparent;padding:0 8px}
+header .tab.active{color:#fff;border-color:#2f80ff;background:#202832}
+main{height:calc(100vh - 56px);display:grid;grid-template-columns:46px 1fr 340px}
+.toolbar{background:#151a21;border-right:1px solid #2b3440;padding:8px 6px;display:flex;flex-direction:column;gap:7px}
+.tool{height:32px;border-radius:3px;padding:0;font-weight:700}
+.stage{display:grid;place-items:center;background:#10151a;min-width:0}
+.canvasWrap{padding:30px;background:#0e1318;border:1px solid #27313c;box-shadow:inset 0 0 0 1px #151c24}
+canvas{image-rendering:pixelated;background:#111820;border:1px solid #26323d;max-width:min(72vh,72vw);max-height:min(72vh,72vw);width:720px;height:720px}
+aside{background:#1a2028;border-left:1px solid #2d3844;display:grid;grid-template-rows:auto auto auto 1fr;min-width:0}
+.panel{border-bottom:1px solid #2d3844;padding:10px}
+h1,h2{font-size:13px;letter-spacing:.04em;font-weight:400;color:#aeb9c6;margin:0 0 8px;text-transform:uppercase}
+button,input,textarea{font:13px Arial,sans-serif}
+button{background:#222a34;color:#d9e0e8;border:1px solid #3a4653;padding:7px 9px;cursor:pointer}
+button:hover,button.active{border-color:#2f80ff;background:#283342}
+button:disabled{opacity:.55;cursor:default}
+input[type=color]{width:56px;height:32px;background:#222a34;border:1px solid #3a4653}
+input[type=text]{height:32px;background:#111820;color:#d9e0e8;border:1px solid #3a4653;padding:0 8px;width:96px;text-transform:uppercase}
+textarea{width:100%;height:126px;background:#111820;color:#d9e0e8;border:1px solid #3a4653;padding:8px;resize:vertical;font-family:Consolas,monospace;font-size:12px}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.texture-card{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
+.mini-preview{width:112px;height:112px;background:#151a21;border:1px solid #3a4653;padding:7px}
+.mini-preview canvas{width:96px;height:96px;max-width:none;max-height:none;border:1px solid #2b3440}
+.theme-grid{display:grid;grid-template-columns:repeat(3,32px);gap:7px;margin-bottom:8px}
+.theme{width:32px;height:32px;border:2px solid #101820;padding:0}
+.theme.active{outline:2px solid #fff;outline-offset:1px}
+.picker-block{display:grid;grid-template-columns:56px 1fr;gap:7px;align-items:center;margin:7px 0}
+.tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.wide{grid-column:1/-1}
+.hint{color:#8f9ba8;font-size:12px;line-height:1.35;margin-top:7px}
+.channels{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;color:#c9d2dc;text-align:center}
+.channels span{background:#18202a;padding:5px 0;border-bottom:2px solid #2f80ff}
+.palette{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:8px}
+.swatch{height:22px;border:1px solid #3a4653;padding:0}
+.keys{display:grid;grid-template-columns:54px 1fr;gap:5px;color:#aeb9c6;font-size:12px}
+.key{background:#101820;border:1px solid #34404d;text-align:center;padding:4px 0;color:#fff}
+.status{min-height:36px;color:#9fb1c5;font-size:12px;line-height:1.35;margin-top:7px}
+footer{height:23px;background:#181d24;border-top:1px solid #2b3440;display:flex;justify-content:space-between;align-items:center;padding:0 12px;color:#8f9ba8;font-size:12px}
+</style>
+</head>
+<body>
+<header><div class="tab active">Texture</div><div class="tab">Paint</div><div class="tab">Preview</div><div>MusicXCST Disc Texture Editor</div></header>
+<main>
+  <nav class="toolbar">
+    <button id="draw" class="tool active" title="Brush">B</button>
+    <button id="erase" class="tool" title="Eraser">E</button>
+    <button id="bucket" class="tool" title="Fill bucket">F</button>
+    <button id="pick" class="tool" title="Eyedropper">P</button>
+  </nav>
+  <section class="stage">
+    <div class="canvasWrap"><canvas id="grid" width="720" height="720" aria-label="16 by 16 disc pixel grid"></canvas></div>
+  </section>
+  <aside>
+    <section class="panel">
+      <h1>Texture</h1>
+      <div class="texture-card">
+        <div class="mini-preview"><canvas id="preview" width="96" height="96" aria-label="Disc preview"></canvas></div>
+        <div>
+          <div id="themePalette" class="theme-grid"></div>
+          <div class="picker-block">
+            <input id="color" type="color" value="#38bdf8" title="Color picker">
+            <input id="hex" type="text" value="#38BDF8" maxlength="7" title="HEX color">
+          </div>
+          <div class="row">
+            <button id="applyTheme">Apply Color</button>
+            <button id="transparent">Transparent</button>
+          </div>
+        </div>
+      </div>
+      <div class="channels"><span id="r">56</span><span id="g">189</span><span id="b">248</span></div>
+      <div id="palette" class="palette"></div>
+    </section>
+    <section class="panel">
+      <h2>Tools</h2>
+      <div class="tool-grid">
+        <button id="draw2">Brush</button>
+        <button id="erase2">Eraser</button>
+        <button id="bucket2">Fill Bucket</button>
+        <button id="pick2">Eyedropper</button>
+        <button id="clear">Clear</button>
+        <button id="reset">Reset</button>
+        <button id="finish" class="wide">Finish / WEB Import</button>
+      </div>
+      <div id="status" class="status"></div>
+    </section>
+    <section class="panel">
+      <h2>Shortcuts</h2>
+      <div class="keys"><div class="key">B</div><div>Brush</div><div class="key">E</div><div>Eraser</div><div class="key">F</div><div>Fill bucket</div><div class="key">P</div><div>Eyedropper</div></div>
+    </section>
+    <section class="panel">
+      <h2>Design ID</h2>
+      <textarea id="output" spellcheck="false" placeholder="Paste a Design ID here or click Finish to export."></textarea>
+      <div class="row" style="margin-top:7px"><button id="import">Import Design ID</button><button id="copy">Copy Design ID</button></div>
+      <div class="hint">The editor is local and offline. If automatic import fails, copy this Design ID into Minecraft and press Import.</div>
+    </section>
+  </aside>
+</main>
+<footer><span>16x16 ARGB texture</span><span>100%</span></footer>
+<script>
+const PREFIX="MXC1:";
+const LEGACY="MXC16.";
+const CHARS="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+const SIZE=16;
+const params=new URLSearchParams(location.search);
+const callbackPort=params.get("port")||"";
+const token=params.get("token")||"";
+const initial=params.get("design")||"";
+const canvas=document.getElementById("grid");
+const ctx=canvas.getContext("2d");
+const preview=document.getElementById("preview");
+const previewCtx=preview.getContext("2d");
+const color=document.getElementById("color");
+const hex=document.getElementById("hex");
+const output=document.getElementById("output");
+const statusBox=document.getElementById("status");
+let mode="draw";
+let dragging=false;
+let pixels=decode(initial)||defaultPixels();
+const history=["#38BDF8","#EF4444","#FACC15","#22C55E","#D946EF","#0EA5E9","#3A4246","#FFFFFF"];
+const themeColors=["#FF0000","#FCFF00","#15FF00","#DF00FF","#009DFF","#3A4246"];
+let activeTheme="";
+function defaultPixels(){
+  const p=new Array(SIZE*SIZE).fill(0);
+  const rows=[
+    "................","................","................",".....AAAAA......",
+    "..AAABBBBBAAA...",".ABBBBCCCHBBBA..","ABHHBBCHHCBHBBA.",
+    "ABHBBHCCCBBBHBA.","ABBHBBDBBCHHBBA.","AEBBBHCCCBBBBEA.",
+    ".FEEEBBBBBEEEF..","..FFFEEEEEFFF...",".....EEEEE......",
+    "................","................","................"
+  ];
+  const colors={A:0xff212121|0,B:0xff616161|0,C:0xff101010|0,D:0xff262626|0,E:0xff2f2f2f|0,F:0xff262626|0,H:0xffa6a6a6|0};
+  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++)p[y*SIZE+x]=colors[rows[y][x]]||0;
+  return p;
+}
+function draw(){
+  ctx.clearRect(0,0,720,720);
+  const cell=720/SIZE;
+  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
+    const v=pixels[y*SIZE+x]>>>0;
+    ctx.fillStyle=(v>>>24)===0?(((x+y)&1)?"#2b2230":"#4a3c52"):"#"+(v&0xffffff).toString(16).padStart(6,"0");
+    ctx.fillRect(x*cell,y*cell,cell,cell);
+    ctx.strokeStyle="rgba(255,255,255,.08)";
+    ctx.strokeRect(x*cell,y*cell,cell,cell);
+  }
+  drawPreview();
+}
+function drawPreview(){
+  previewCtx.clearRect(0,0,96,96);
+  const cell=96/SIZE;
+  for(let y=0;y<SIZE;y++)for(let x=0;x<SIZE;x++){
+    const v=pixels[y*SIZE+x]>>>0;
+    previewCtx.fillStyle=(v>>>24)===0?(((x+y)&1)?"#d6d6d6":"#f4f4f4"):"#"+(v&0xffffff).toString(16).padStart(6,"0");
+    previewCtx.fillRect(x*cell,y*cell,cell,cell);
+  }
+}
+function pos(e){
+  const r=canvas.getBoundingClientRect();
+  return {x:Math.max(0,Math.min(15,Math.floor((e.clientX-r.left)/(r.width/SIZE)))),y:Math.max(0,Math.min(15,Math.floor((e.clientY-r.top)/(r.height/SIZE))))};
+}
+function paint(e){
+  const p=pos(e), i=p.y*SIZE+p.x;
+  activeTheme="";
+  syncThemeButtons();
+  if(mode==="pick"){
+    const v=pixels[i]>>>0;
+    if((v>>>24)!==0)setColor("#"+(v&0xffffff).toString(16).padStart(6,"0"));
+    setMode("draw");
+  }else if(mode==="bucket"){
+    fill(i,pixels[i],0xff000000|parseInt(color.value.slice(1),16));
+  }else{
+    pixels[i]=mode==="erase"?0:(0xff000000|parseInt(color.value.slice(1),16));
+  }
+  draw();
+}
+function fill(start,target,replacement){
+  if((target>>>0)===(replacement>>>0))return;
+  const stack=[start];
+  while(stack.length){
+    const i=stack.pop();
+    if((pixels[i]>>>0)!==(target>>>0))continue;
+    pixels[i]=replacement;
+    const x=i%SIZE,y=Math.floor(i/SIZE);
+    if(x>0)stack.push(i-1); if(x<SIZE-1)stack.push(i+1); if(y>0)stack.push(i-SIZE); if(y<SIZE-1)stack.push(i+SIZE);
+  }
+}
+function setMode(next){
+  mode=next;
+  for(const id of ["draw","erase","bucket","pick"])document.getElementById(id).classList.toggle("active",mode===id);
+  document.getElementById("draw2").classList.toggle("active",mode==="draw");
+  document.getElementById("erase2").classList.toggle("active",mode==="erase");
+  document.getElementById("bucket2").classList.toggle("active",mode==="bucket");
+  document.getElementById("pick2").classList.toggle("active",mode==="pick");
+}
+function setColor(value){
+  const normalized=value.startsWith("#")?value:"#"+value;
+  if(!/^#[0-9a-fA-F]{6}$/.test(normalized))return;
+  color.value=normalized;
+  hex.value=normalized.toUpperCase();
+  colorRgb();
+}
+function colorRgb(){
+  const v=parseInt(color.value.slice(1),16);
+  hex.value=color.value.toUpperCase();
+  document.getElementById("r").textContent=(v>>16)&255;
+  document.getElementById("g").textContent=(v>>8)&255;
+  document.getElementById("b").textContent=v&255;
+}
+function encode(){
+  const palette=[], body=[];
+  for(const raw of pixels){
+    const v=raw>>>0;
+    if((v>>>24)===0){body.push(".");continue}
+    const rgb=(v&0xffffff).toString(16).padStart(6,"0").toUpperCase();
+    let i=palette.indexOf(rgb);
+    if(i<0){palette.push(rgb);i=palette.length-1}
+    body.push(CHARS[i]);
+  }
+  return PREFIX+palette.join(",")+";"+body.join("");
+}
+function decode(id){
+  if(!id||id.length>1400)return null;
+  if(id.startsWith(PREFIX)){
+    try{
+      const cut=id.indexOf(";");
+      if(cut<0)return null;
+      const palette=id.slice(PREFIX.length,cut).split(",").filter(Boolean);
+      const body=id.slice(cut+1);
+      if(body.length!==SIZE*SIZE||palette.length>CHARS.length)return null;
+      return [...body].map(ch=>{
+        if(ch==="."||ch===" ")return 0;
+        const i=CHARS.indexOf(ch);
+        if(i<0||i>=palette.length)throw new Error("bad index");
+        return 0xff000000|parseInt(palette[i],16);
+      });
+    }catch(e){return null;}
+  }
+  if(!id.startsWith(LEGACY))return null;
+  try{
+    let s=id.slice(LEGACY.length).replaceAll("-","+").replaceAll("_","/");
+    while(s.length%4)s+="=";
+    const bin=atob(s);
+    if(bin.length!==SIZE*SIZE*4)return null;
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const view=new DataView(bytes.buffer);
+    const arr=new Array(SIZE*SIZE);
+    for(let i=0;i<arr.length;i++){
+      const v=view.getInt32(i*4,false);
+      arr[i]=((v>>>24)===0)?0:(0xff000000|(v&0xffffff));
+    }
+    return arr;
+  }catch(e){return null;}
+}
+function renderPalette(){
+  const holder=document.getElementById("palette");
+  holder.innerHTML="";
+  for(const swatch of history){
+    const btn=document.createElement("button");
+    btn.className="swatch";
+    btn.style.background=swatch;
+    btn.title=swatch;
+    btn.onclick=()=>setColor(swatch);
+    holder.appendChild(btn);
+  }
+}
+function renderThemeButtons(){
+  const holder=document.getElementById("themePalette");
+  holder.innerHTML="";
+  for(const value of themeColors){
+    const btn=document.createElement("button");
+    btn.className="theme";
+    btn.style.background=value;
+    btn.title=`Apply ${value}`;
+    btn.onclick=()=>applyTheme(value);
+    btn.dataset.color=value;
+    holder.appendChild(btn);
+  }
+  syncThemeButtons();
+}
+function syncThemeButtons(){
+  for(const button of document.querySelectorAll(".theme")){
+    button.classList.toggle("active",button.dataset.color===activeTheme);
+  }
+}
+function applyTheme(value){
+  setColor(value);
+  pixels=themedBlueprint(value);
+  activeTheme=value.toUpperCase();
+  syncThemeButtons();
+  draw();
+}
+function themedBlueprint(value){
+  const base=defaultPixels();
+  const rgb=parseInt(value.replace("#",""),16);
+  return base.map(pixel=>{
+    const v=pixel>>>0;
+    if((v>>>24)===0)return 0;
+    const shade=v&0xffffff;
+    if(shade===0x101010)return 0xff000000|mix(rgb,0x000000,.84);
+    if(shade===0x212121)return 0xff000000|mix(rgb,0x000000,.72);
+    if(shade===0x262626)return 0xff000000|mix(rgb,0x000000,.62);
+    if(shade===0x2f2f2f)return 0xff000000|mix(rgb,0x000000,.54);
+    if(shade===0x616161)return 0xff000000|mix(rgb,0x000000,.22);
+    if(shade===0xa6a6a6)return 0xff000000|mix(rgb,0xffffff,.42);
+    return v;
+  });
+}
+function mix(rgb,other,otherAmount){
+  const source=1-otherAmount;
+  const r=Math.round(((rgb>>16)&255)*source+((other>>16)&255)*otherAmount);
+  const g=Math.round(((rgb>>8)&255)*source+((other>>8)&255)*otherAmount);
+  const b=Math.round((rgb&255)*source+(other&255)*otherAmount);
+  return (r<<16)|(g<<8)|b;
+}
+function setStatus(text){statusBox.textContent=text}
+async function finish(){
+  const id=encode();
+  output.value=id;
+  try{await navigator.clipboard.writeText(id)}catch(e){}
+  if(!callbackPort||!token){setStatus("Design ID is ready. Copy it into Minecraft if needed.");return}
+  try{
+    const response=await fetch(`http://127.0.0.1:${callbackPort}/finish`,{
+      method:"POST",
+      headers:{"Content-Type":"application/x-www-form-urlencoded"},
+      body:new URLSearchParams({token,design:id}).toString()
+    });
+    if(!response.ok)throw new Error(await response.text());
+    startCloseCountdown();
+  }catch(e){
+    setStatus("Automatic import failed. Copy this Design ID into Minecraft and press Import.");
+  }
+}
+function startCloseCountdown(){
+  let remaining=5;
+  const tick=()=>{
+    setStatus(`Design imported into Minecraft. Closing in ${remaining}...`);
+    if(remaining--<=0){
+      window.close();
+      setTimeout(()=>setStatus("Design imported into Minecraft. You can close this tab now."),300);
+      return;
+    }
+    setTimeout(tick,1000);
+  };
+  tick();
+}
+canvas.addEventListener("mousedown",e=>{dragging=true;paint(e)});
+canvas.addEventListener("mousemove",e=>{if(dragging)paint(e)});
+window.addEventListener("mouseup",()=>dragging=false);
+for(const id of ["draw","erase","bucket","pick"])document.getElementById(id).onclick=()=>setMode(id);
+document.getElementById("draw2").onclick=()=>setMode("draw");
+document.getElementById("erase2").onclick=()=>setMode("erase");
+document.getElementById("bucket2").onclick=()=>setMode("bucket");
+document.getElementById("pick2").onclick=()=>setMode("pick");
+document.getElementById("applyTheme").onclick=()=>applyTheme(color.value);
+document.getElementById("transparent").onclick=()=>setMode("erase");
+document.getElementById("clear").onclick=()=>{activeTheme="";syncThemeButtons();pixels.fill(0);draw()};
+document.getElementById("reset").onclick=()=>{activeTheme="";syncThemeButtons();pixels=defaultPixels();draw()};
+document.getElementById("finish").onclick=finish;
+document.getElementById("copy").onclick=async()=>{const id=encode();output.value=id;try{await navigator.clipboard.writeText(id);setStatus("Design ID copied.")}catch(e){setStatus("Design ID is ready.")}};
+document.getElementById("import").onclick=()=>{const decoded=decode(output.value.trim());if(decoded){activeTheme="";syncThemeButtons();pixels=decoded;draw();setStatus("Design ID imported into the editor.")}else setStatus("Invalid Design ID.")};
+color.addEventListener("input",()=>{activeTheme="";syncThemeButtons();colorRgb();history.unshift(color.value.toUpperCase());renderPalette()});
+hex.addEventListener("change",()=>setColor(hex.value));
+window.addEventListener("keydown",event=>{
+  if(event.key==="b"||event.key==="B"){setMode("draw");event.preventDefault();}
+  if(event.key==="e"||event.key==="E"){setMode("erase");event.preventDefault();}
+  if(event.key==="f"||event.key==="F"){setMode("bucket");event.preventDefault();}
+  if(event.key==="p"||event.key==="P"){setMode("pick");event.preventDefault();}
+});
+output.value=encode();
+colorRgb();
+renderPalette();
+renderThemeButtons();
+draw();
+</script>
+</body>
+</html>

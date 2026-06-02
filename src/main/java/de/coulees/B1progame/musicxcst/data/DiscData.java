@@ -134,13 +134,13 @@ public final class DiscData {
                 "................",
                 ".....AAAAA......",
                 "..AAABBBBBAAA...",
-                ".ABBBBAAABBBBA..",
-                "ABBBBBABBABBBBA.",
-                "ABBBBBAAABBBBBA.",
-                "ABBBBBABBABBBBA.",
-                "AABBBBAAABBBBAA.",
-                ".AAAABBBBBAAAA..",
-                "..AAAAAAAAAAA...",
+                ".ABBBBCCCHBBBA..",
+                "ABHHBBCHHCBHBBA.",
+                "ABHBBHCCCBBBHBA.",
+                "ABBHBBDBBCHHBBA.",
+                "AEBBBHCCCBBBBEA.",
+                ".FEEEBBBBBEEEF..",
+                "..FFFEEEEEFFF...",
                 ".....EEEEE......",
                 "................",
                 "................",
@@ -155,9 +155,36 @@ public final class DiscData {
                     case 'C' -> 0xFF101010;
                     case 'D' -> 0xFF262626;
                     case 'E' -> 0xFF2F2F2F;
+                    case 'F' -> 0xFF262626;
+                    case 'H' -> 0xFFA6A6A6;
                     default -> 0;
                 };
             }
+        }
+        return pixels;
+    }
+
+    public static int[] themedBlueprintDesign(int accentColor) {
+        int[] base = defaultDesign();
+        int[] pixels = new int[DESIGN_PIXELS];
+        int rgb = accentColor & 0x00FFFFFF;
+        for (int index = 0; index < base.length; index++) {
+            int pixel = base[index];
+            if ((pixel >>> 24) == 0) {
+                pixels[index] = 0;
+                continue;
+            }
+
+            int gray = pixel & 0x00FFFFFF;
+            pixels[index] = switch (gray) {
+                case 0x101010 -> 0xFF000000 | mix(rgb, 0x000000, 0.84F);
+                case 0x212121 -> 0xFF000000 | mix(rgb, 0x000000, 0.72F);
+                case 0x262626 -> 0xFF000000 | mix(rgb, 0x000000, 0.62F);
+                case 0x2F2F2F -> 0xFF000000 | mix(rgb, 0x000000, 0.54F);
+                case 0x616161 -> 0xFF000000 | mix(rgb, 0x000000, 0.22F);
+                case 0xA6A6A6 -> 0xFF000000 | mix(rgb, 0xFFFFFF, 0.42F);
+                default -> pixel;
+            };
         }
         return pixels;
     }
@@ -300,6 +327,14 @@ public final class DiscData {
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
+    }
+
+    private static int mix(int rgb, int other, float otherAmount) {
+        float sourceAmount = 1.0F - otherAmount;
+        int red = Math.round(((rgb >> 16) & 0xFF) * sourceAmount + ((other >> 16) & 0xFF) * otherAmount);
+        int green = Math.round(((rgb >> 8) & 0xFF) * sourceAmount + ((other >> 8) & 0xFF) * otherAmount);
+        int blue = Math.round((rgb & 0xFF) * sourceAmount + (other & 0xFF) * otherAmount);
+        return (red << 16) | (green << 8) | blue;
     }
 
     private static int renderColor(DiscData data) {
