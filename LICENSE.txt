@@ -10,3 +10,5 @@ Bundled third-party executables, including FFmpeg binaries, are not owned by the
 MusicXCST invokes FFmpeg as a separate executable process. FFmpeg is not linked into the MusicXCST code.
 
 This repository does not grant any rights to upload, distribute, or play copyrighted music. Users and server operators are responsible for ensuring they have the rights to any audio they upload or distribute.
+
+Permission is granted to view and fork this repository through GitHub's interface for personal, non-commercial evaluation purposes only. No rights are granted to distribute, modify, or create derivative works.
