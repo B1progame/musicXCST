@@ -80,10 +80,6 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 49;
     private static final int ADVANCED_BUTTON_WIDTH = 22;
     private static final int ADVANCED_BUTTON_HEIGHT = 10;
-    private static final int RESET_BUTTON_X = DESIGN_PANEL_X + 76;
-    private static final int RESET_BUTTON_Y = DESIGN_PANEL_Y + 59;
-    private static final int RESET_BUTTON_WIDTH = 10;
-    private static final int RESET_BUTTON_HEIGHT = 10;
     private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 4;
     private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 72;
     private static final int IMPORT_BOX_WIDTH = 62;
@@ -360,7 +356,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         for (int index = 0; index < THEME_COLORS.length; index++) {
             int sx = THEME_X + (index % 3) * 11;
             int sy = THEME_Y + (index / 3) * 11;
-            if (inside(x, y, sx, sy, THEME_SIZE, THEME_SIZE)) {
+            if (insideThemeSwatch(x, y, sx, sy)) {
                 applyTheme(THEME_COLORS[index]);
                 return true;
             }
@@ -373,13 +369,6 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
 
         if (inside(x, y, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT)) {
             openAdvancedEditor();
-            return true;
-        }
-
-        if (inside(x, y, RESET_BUTTON_X, RESET_BUTTON_Y, RESET_BUTTON_WIDTH, RESET_BUTTON_HEIGHT)) {
-            resetWorkingDesign();
-            saveWorkingDesign();
-            message("Reset disc design.");
             return true;
         }
 
@@ -442,6 +431,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private void openAdvancedEditor() {
         Minecraft client = Minecraft.getInstance();
         try {
+            message("Opening texture editor...");
             Path editor = client.gameDirectory.toPath()
                     .resolve("config")
                     .resolve(Musicxcst.MOD_ID)
@@ -453,10 +443,10 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             String designId = DiscData.encodeDesignId(discPixels);
             String uri = editor.toUri() + "?port=" + port + "&token=" + editorToken + "&design=" + urlEncode(designId);
             Util.getPlatform().openUri(URI.create(uri));
-            message("Opened local disc design editor. Finish will import automatically; manual Design ID import still works.");
+            message("Texture editor opened.");
         } catch (IOException exception) {
             stopEditorServer();
-            message("Could not open the local design editor: " + exception.getMessage());
+            message("Failed to open editor: " + exception.getMessage());
         }
     }
 
@@ -470,8 +460,16 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         for (int index = 0; index < THEME_COLORS.length; index++) {
             int sx = leftPos + THEME_X + (index % 3) * 11;
             int sy = topPos + THEME_Y + (index / 3) * 11;
-            guiGraphics.fill(sx, sy, sx + THEME_SIZE, sy + THEME_SIZE, 0xFF000000 | THEME_COLORS[index]);
-            guiGraphics.outline(sx - 1, sy - 1, THEME_SIZE + 2, THEME_SIZE + 2, selectedColor == THEME_COLORS[index] ? 0xFFFFFFFF : 0xFF202020);
+            int borderColor = selectedColor == THEME_COLORS[index] ? 0xFFFFFFFF : 0xFF202020;
+            for (int py = 0; py < THEME_SIZE; py++) {
+                for (int px = 0; px < THEME_SIZE; px++) {
+                    if (isThemeSwatchCorner(px, py)) {
+                        continue;
+                    }
+                    boolean border = px == 0 || px == THEME_SIZE - 1 || py == 0 || py == THEME_SIZE - 1;
+                    guiGraphics.fill(sx + px, sy + py, sx + px + 1, sy + py + 1, border ? borderColor : 0xFF000000 | THEME_COLORS[index]);
+                }
+            }
         }
     }
 
@@ -730,6 +728,17 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
 
     private static boolean inside(int x, int y, int left, int top, int width, int height) {
         return x >= left && x < left + width && y >= top && y < top + height;
+    }
+
+    private static boolean insideThemeSwatch(int x, int y, int left, int top) {
+        if (!inside(x, y, left, top, THEME_SIZE, THEME_SIZE)) {
+            return false;
+        }
+        return !isThemeSwatchCorner(x - left, y - top);
+    }
+
+    private static boolean isThemeSwatchCorner(int x, int y) {
+        return (x == 0 || x == THEME_SIZE - 1) && (y == 0 || y == THEME_SIZE - 1);
     }
 
     private void drawButton(GuiGraphicsExtractor guiGraphics, String text, int x, int y, int width, int height) {
