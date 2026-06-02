@@ -1,6 +1,14 @@
 {
   "item.musicxcst.blueprint_cd": "Blueprint CD",
+  "item.musicxcst.cd_writer": "CD Writer",
   "block.musicxcst.cd_writer": "CD Writer",
   "jukebox_song.musicxcst.blueprint_cd_silence": "Blueprint CD",
-  "itemGroup.musicxcst": "musicXCST"
+  "itemGroup.musicxcst": "musicXCST",
+  "tooltip.musicxcst.blueprint_cd.blank": "Blank writable Blueprint CD",
+  "tooltip.musicxcst.blueprint_cd.blank_hint": "Use the CD Writer to print custom music.",
+  "tooltip.musicxcst.blueprint_cd.music_id": "Music ID: %s",
+  "tooltip.musicxcst.blueprint_cd.owner": "Owner: %s",
+  "tooltip.musicxcst.blueprint_cd.color": "Color: %s",
+  "tooltip.musicxcst.blueprint_cd.status": "Status: %s",
+  "tooltip.musicxcst.blueprint_cd.invalid_warning": "Warning: audio is missing, deleted, or invalid."
 }

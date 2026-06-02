@@ -56,10 +56,10 @@ public final class AudioPlayer {
         float offsetSeconds = looping && durationSeconds > 0.0F ? elapsedSeconds % durationSeconds : elapsedSeconds;
         AL10.alSourcef(source, AL11.AL_SEC_OFFSET, offsetSeconds);
         AL10.alSourcePlay(source);
-        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional(), looping);
+        return new PlayingSound(source, buffer, payload.musicId(), payload.startedAtMillis(), payload.pos(), payload.radiusBlocks(), payload.positional(), looping, Math.max(0, Math.min(100, payload.volumePercent())));
     }
 
-    public record PlayingSound(int source, int buffer, String musicId, long startedAtMillis, BlockPos pos, int radiusBlocks, boolean positional, boolean looping) implements AutoCloseable {
+    public record PlayingSound(int source, int buffer, String musicId, long startedAtMillis, BlockPos pos, int radiusBlocks, boolean positional, boolean looping, int volumePercent) implements AutoCloseable {
         public boolean matches(JukeboxStartPayload payload) {
             return musicId.equals(payload.musicId()) && startedAtMillis == payload.startedAtMillis() && looping == payload.looping();
         }

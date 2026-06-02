@@ -40,18 +40,18 @@ public final class BlueprintCdItem extends Item {
     public void appendHoverText(ItemStack stack, Item.TooltipContext context, TooltipDisplay display, Consumer<Component> tooltip, TooltipFlag flag) {
         DiscData data = DiscData.fromStack(stack);
         if (data == null) {
-            tooltip.accept(Component.literal("Blank writable Blueprint CD").withStyle(ChatFormatting.AQUA));
-            tooltip.accept(Component.literal("Use /cstmusic create while holding this disc.").withStyle(ChatFormatting.GRAY));
+            tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.blank").withStyle(ChatFormatting.AQUA));
+            tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.blank_hint").withStyle(ChatFormatting.GRAY));
             return;
         }
 
-        tooltip.accept(Component.literal("Music ID: " + data.musicId).withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.literal("Owner: " + data.ownerName).withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.literal("Color: " + data.hexColor).withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.literal("Status: " + data.status).withStyle(MusicStatus.isInvalidLike(data.status) ? ChatFormatting.RED : ChatFormatting.GREEN));
+        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.music_id", data.musicId).withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.owner", data.ownerName).withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.color", data.hexColor).withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.status", data.status).withStyle(MusicStatus.isInvalidLike(data.status) ? ChatFormatting.RED : ChatFormatting.GREEN));
 
         if (MusicStatus.isInvalidLike(data.status)) {
-            tooltip.accept(Component.literal("Warning: audio is missing, deleted, or invalid.").withStyle(ChatFormatting.RED));
+            tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.invalid_warning").withStyle(ChatFormatting.RED));
         }
     }
 }

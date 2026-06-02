@@ -1,0 +1,14 @@
+{
+  "item.musicxcst.blueprint_cd": "Blueprint-CD",
+  "item.musicxcst.cd_writer": "CD-Brenner",
+  "block.musicxcst.cd_writer": "CD-Brenner",
+  "jukebox_song.musicxcst.blueprint_cd_silence": "Blueprint-CD",
+  "itemGroup.musicxcst": "musicXCST",
+  "tooltip.musicxcst.blueprint_cd.blank": "Leere beschreibbare Blueprint-CD",
+  "tooltip.musicxcst.blueprint_cd.blank_hint": "Benutze den CD-Brenner, um eigene Musik zu drucken.",
+  "tooltip.musicxcst.blueprint_cd.music_id": "Musik-ID: %s",
+  "tooltip.musicxcst.blueprint_cd.owner": "Besitzer: %s",
+  "tooltip.musicxcst.blueprint_cd.color": "Farbe: %s",
+  "tooltip.musicxcst.blueprint_cd.status": "Status: %s",
+  "tooltip.musicxcst.blueprint_cd.invalid_warning": "Warnung: Die Audiodatei fehlt, wurde gelöscht oder ist ungültig."
+}

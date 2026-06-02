@@ -9,8 +9,17 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.DyedItemColor;
+import java.nio.ByteBuffer;
+import java.util.Base64;
+import java.util.Optional;
 
 public final class DiscData {
+    public static final int DESIGN_SIZE = 16;
+    public static final int DESIGN_PIXELS = DESIGN_SIZE * DESIGN_SIZE;
+    public static final String DESIGN_ID_PREFIX = "MXC1:";
+    private static final String LEGACY_DESIGN_ID_PREFIX = "MXC16.";
+    private static final String PALETTE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+    public static final int DESIGN_ID_MAX_LENGTH = 1400;
     private static final Identifier VALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd");
     private static final Identifier INVALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd_invalid");
 
@@ -20,6 +29,7 @@ public final class DiscData {
     public String ownerName;
     public String hexColor;
     public String designId;
+    public int[] designPixels;
     public String status;
     public int schemaVersion;
 
@@ -30,7 +40,8 @@ public final class DiscData {
         data.ownerUuid = entry.ownerUuid;
         data.ownerName = entry.ownerName;
         data.hexColor = entry.hexColor;
-        data.designId = "default";
+        data.designPixels = defaultDesign();
+        data.designId = encodeDesignId(data.designPixels);
         data.status = entry.status;
         data.schemaVersion = entry.schemaVersion;
         return data;
@@ -54,7 +65,14 @@ public final class DiscData {
         data.ownerUuid = tag.getStringOr("ownerUuid", "");
         data.ownerName = tag.getStringOr("ownerName", "");
         data.hexColor = tag.getStringOr("hexColor", "");
-        data.designId = tag.getStringOr("designId", "");
+        String storedDesignId = tag.getStringOr("designId", "");
+        Optional<int[]> storedPixels = tag.getIntArray("designPixels");
+        if (storedPixels.isPresent() && storedPixels.get().length == DESIGN_PIXELS) {
+            data.designPixels = sanitizeDesign(storedPixels.get());
+        } else {
+            data.designPixels = decodeDesignId(storedDesignId).orElseGet(DiscData::defaultDesign);
+        }
+        data.designId = encodeDesignId(data.designPixels);
         data.status = tag.getStringOr("status", MusicStatus.INVALID);
         data.schemaVersion = tag.getIntOr("schemaVersion", Musicxcst.DISC_SCHEMA_VERSION);
         return data.musicId.isBlank() ? null : data;
@@ -67,7 +85,9 @@ public final class DiscData {
         tag.putString("ownerUuid", data.ownerUuid);
         tag.putString("ownerName", data.ownerName);
         tag.putString("hexColor", data.hexColor);
-        tag.putString("designId", data.designId);
+        int[] sanitizedDesign = sanitizeDesign(data.designPixels);
+        tag.putString("designId", encodeDesignId(sanitizedDesign));
+        tag.putIntArray("designPixels", sanitizedDesign);
         tag.putString("status", data.status);
         tag.putInt("schemaVersion", data.schemaVersion);
 
@@ -106,12 +126,215 @@ public final class DiscData {
         }
     }
 
+    public static int[] defaultDesign() {
+        int[] pixels = new int[DESIGN_PIXELS];
+        String[] rows = {
+                "................",
+                "................",
+                "................",
+                ".....AAAAA......",
+                "..AAABBBBBAAA...",
+                ".ABBBBAAABBBBA..",
+                "ABBBBBABBABBBBA.",
+                "ABBBBBAAABBBBBA.",
+                "ABBBBBABBABBBBA.",
+                "AABBBBAAABBBBAA.",
+                ".AAAABBBBBAAAA..",
+                "..AAAAAAAAAAA...",
+                ".....EEEEE......",
+                "................",
+                "................",
+                "................"
+        };
+
+        for (int y = 0; y < DESIGN_SIZE; y++) {
+            for (int x = 0; x < DESIGN_SIZE; x++) {
+                pixels[y * DESIGN_SIZE + x] = switch (rows[y].charAt(x)) {
+                    case 'A' -> 0xFF212121;
+                    case 'B' -> 0xFF616161;
+                    case 'C' -> 0xFF101010;
+                    case 'D' -> 0xFF262626;
+                    case 'E' -> 0xFF2F2F2F;
+                    default -> 0;
+                };
+            }
+        }
+        return pixels;
+    }
+
+    public static int[] sanitizeDesign(int[] pixels) {
+        int[] sanitized = defaultDesign();
+        if (pixels == null || pixels.length != DESIGN_PIXELS) {
+            return sanitized;
+        }
+
+        for (int index = 0; index < pixels.length; index++) {
+            sanitized[index] = sanitizeDesignPixel(pixels[index]);
+        }
+        return sanitized;
+    }
+
+    public static int sanitizeDesignPixel(int pixel) {
+        return (pixel >>> 24) == 0 ? 0 : 0xFF000000 | (pixel & 0x00FFFFFF);
+    }
+
+    public static String encodeDesignId(int[] pixels) {
+        int[] sanitized = sanitizeDesign(pixels);
+        int[] palette = new int[Math.min(DESIGN_PIXELS, PALETTE_CHARS.length())];
+        int paletteSize = 0;
+        StringBuilder body = new StringBuilder(DESIGN_PIXELS);
+
+        for (int pixel : sanitized) {
+            if ((pixel >>> 24) == 0) {
+                body.append('.');
+                continue;
+            }
+
+            int rgb = pixel & 0x00FFFFFF;
+            int index = -1;
+            for (int paletteIndex = 0; paletteIndex < paletteSize; paletteIndex++) {
+                if (palette[paletteIndex] == rgb) {
+                    index = paletteIndex;
+                    break;
+                }
+            }
+
+            if (index < 0) {
+                if (paletteSize >= PALETTE_CHARS.length()) {
+                    return encodeLegacyDesignId(sanitized);
+                }
+                index = paletteSize;
+                palette[paletteSize++] = rgb;
+            }
+            body.append(PALETTE_CHARS.charAt(index));
+        }
+
+        StringBuilder header = new StringBuilder();
+        for (int index = 0; index < paletteSize; index++) {
+            if (index > 0) {
+                header.append(',');
+            }
+            header.append(String.format("%06X", palette[index]));
+        }
+        return DESIGN_ID_PREFIX + header + ";" + body;
+    }
+
+    public static Optional<int[]> decodeDesignId(String designId) {
+        if (designId == null) {
+            return Optional.empty();
+        }
+
+        String trimmed = designId.trim();
+        if (trimmed.length() > DESIGN_ID_MAX_LENGTH) {
+            return Optional.empty();
+        }
+        if (trimmed.startsWith(LEGACY_DESIGN_ID_PREFIX)) {
+            return decodeLegacyDesignId(trimmed);
+        }
+        if (!trimmed.startsWith(DESIGN_ID_PREFIX)) {
+            return Optional.empty();
+        }
+
+        int separator = trimmed.indexOf(';', DESIGN_ID_PREFIX.length());
+        if (separator < 0) {
+            return Optional.empty();
+        }
+
+        String paletteText = trimmed.substring(DESIGN_ID_PREFIX.length(), separator);
+        String body = trimmed.substring(separator + 1);
+        if (body.length() != DESIGN_PIXELS) {
+            return Optional.empty();
+        }
+
+        String[] colorTexts = paletteText.isBlank() ? new String[0] : paletteText.split(",");
+        if (colorTexts.length > PALETTE_CHARS.length()) {
+            return Optional.empty();
+        }
+
+        int[] palette = new int[colorTexts.length];
+        for (int index = 0; index < colorTexts.length; index++) {
+            if (!colorTexts[index].matches("[0-9a-fA-F]{6}")) {
+                return Optional.empty();
+            }
+            palette[index] = Integer.parseInt(colorTexts[index], 16);
+        }
+
+        int[] pixels = new int[DESIGN_PIXELS];
+        for (int index = 0; index < body.length(); index++) {
+            char code = body.charAt(index);
+            if (code == '.' || code == ' ') {
+                pixels[index] = 0;
+                continue;
+            }
+            int paletteIndex = PALETTE_CHARS.indexOf(code);
+            if (paletteIndex < 0 || paletteIndex >= palette.length) {
+                return Optional.empty();
+            }
+            pixels[index] = 0xFF000000 | palette[paletteIndex];
+        }
+        return Optional.of(pixels);
+    }
+
+    private static String encodeLegacyDesignId(int[] pixels) {
+        ByteBuffer buffer = ByteBuffer.allocate(DESIGN_PIXELS * Integer.BYTES);
+        for (int pixel : sanitizeDesign(pixels)) {
+            buffer.putInt(pixel);
+        }
+        return LEGACY_DESIGN_ID_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
+    }
+
+    private static Optional<int[]> decodeLegacyDesignId(String designId) {
+        String encoded = designId.substring(LEGACY_DESIGN_ID_PREFIX.length());
+        try {
+            byte[] bytes = Base64.getUrlDecoder().decode(encoded);
+            if (bytes.length != DESIGN_PIXELS * Integer.BYTES) {
+                return Optional.empty();
+            }
+
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            int[] pixels = new int[DESIGN_PIXELS];
+            for (int index = 0; index < pixels.length; index++) {
+                pixels[index] = sanitizeDesignPixel(buffer.getInt());
+            }
+            return Optional.of(pixels);
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
     private static int renderColor(DiscData data) {
         if (MusicStatus.isInvalidLike(data.status)) {
             return 0xC93A3A;
         }
 
+        Integer designColor = averageDesignColor(data.designPixels);
+        if (designColor != null) {
+            return designColor;
+        }
+
         Integer color = parseRgb(data.hexColor);
         return color != null ? color : 0x2C6DCC;
+    }
+
+    private static Integer averageDesignColor(int[] pixels) {
+        int[] sanitized = sanitizeDesign(pixels);
+        long red = 0L;
+        long green = 0L;
+        long blue = 0L;
+        int count = 0;
+
+        for (int pixel : sanitized) {
+            if ((pixel >>> 24) != 0) {
+                red += (pixel >> 16) & 0xFF;
+                green += (pixel >> 8) & 0xFF;
+                blue += pixel & 0xFF;
+                count++;
+            }
+        }
+
+        if (count == 0) {
+            return null;
+        }
+        return ((int) (red / count) << 16) | ((int) (green / count) << 8) | (int) (blue / count);
     }
 }

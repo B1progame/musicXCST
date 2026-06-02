@@ -5,6 +5,7 @@ import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 
@@ -88,8 +89,9 @@ public final class CustomAudioEngine {
     }
 
     private static void updateDistanceGain(Minecraft client, AudioPlayer.PlayingSound sound) {
+        float volume = soundCategoryVolume(client) * jukeboxVolume(sound);
         if (!sound.positional()) {
-            sound.setGain(1.0F);
+            sound.setGain(volume);
             return;
         }
 
@@ -107,6 +109,14 @@ public final class CustomAudioEngine {
         }
 
         double normalized = distance / radius;
-        sound.setGain((float) ((1.0D - normalized) * (1.0D - normalized)));
+        sound.setGain((float) ((1.0D - normalized) * (1.0D - normalized)) * volume);
+    }
+
+    private static float soundCategoryVolume(Minecraft client) {
+        return client.options.getSoundSourceVolume(SoundSource.MASTER) * client.options.getSoundSourceVolume(SoundSource.RECORDS);
+    }
+
+    private static float jukeboxVolume(AudioPlayer.PlayingSound sound) {
+        return sound.volumePercent() / 100.0F;
     }
 }

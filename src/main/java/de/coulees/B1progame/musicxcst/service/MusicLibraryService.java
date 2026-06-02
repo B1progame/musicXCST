@@ -80,6 +80,7 @@ public final class MusicLibraryService {
     private final PlaybackSessionManager playbackSessions = new PlaybackSessionManager();
     private final PlaybackRangeTracker playbackRange = new PlaybackRangeTracker();
     private final Map<BlockPos, Boolean> jukeboxLooping = new LinkedHashMap<>();
+    private final Map<BlockPos, Integer> jukeboxVolumes = new LinkedHashMap<>();
     private final Map<UUID, Long> playerAutoDownloadIntervals = new LinkedHashMap<>();
     private final Map<UUID, Long> nextPlayerAutoDownloadTick = new LinkedHashMap<>();
     private final Map<String, PendingClientUpload> pendingClientUploads = new LinkedHashMap<>();
@@ -105,6 +106,7 @@ public final class MusicLibraryService {
     public void onServerStopping(MinecraftServer server) {
         playbackSessions.clear();
         jukeboxLooping.clear();
+        jukeboxVolumes.clear();
         playerAutoDownloadIntervals.clear();
         nextPlayerAutoDownloadTick.clear();
         pendingClientUploads.clear();
@@ -222,10 +224,10 @@ public final class MusicLibraryService {
 
     public String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName) {
         ensureServer();
-        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, player.getInventory().getSelectedItem(), null);
+        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, DiscData.defaultDesign(), player.getInventory().getSelectedItem(), null);
     }
 
-    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, ItemStack selected, @Nullable Runnable inventoryChanged) {
+    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, int[] designPixels, ItemStack selected, @Nullable Runnable inventoryChanged) {
         String displayName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
@@ -288,6 +290,8 @@ public final class MusicLibraryService {
         saveIndex();
 
         DiscData data = DiscData.fromEntry(entry);
+        data.designPixels = DiscData.sanitizeDesign(designPixels);
+        data.designId = DiscData.encodeDesignId(data.designPixels);
         if (selected.getCount() == 1) {
             DiscData.writeToStack(selected, data);
         } else {
@@ -428,7 +432,7 @@ public final class MusicLibraryService {
             return;
         }
         if (ServerPlayNetworking.canSend(player, JukeboxSettingsOpenPayload.TYPE)) {
-            ServerPlayNetworking.send(player, new JukeboxSettingsOpenPayload(pos.immutable(), isJukeboxLooping(pos)));
+            ServerPlayNetworking.send(player, new JukeboxSettingsOpenPayload(pos.immutable(), isJukeboxLooping(pos), jukeboxVolume(pos)));
         }
     }
 
@@ -474,7 +478,7 @@ public final class MusicLibraryService {
             }
             blockEntity.setConverting(true);
             menu.setConverting(true);
-            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), menu.inputStack(), menu::inputChanged);
+            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designPixels(), menu.inputStack(), menu::inputChanged);
             menu.moveInputToOutput();
             player.sendSystemMessage(Component.literal(result));
         } catch (IllegalArgumentException exception) {
@@ -502,6 +506,7 @@ public final class MusicLibraryService {
         }
 
         jukeboxLooping.put(pos, payload.looping());
+        jukeboxVolumes.put(pos, clampVolume(payload.volumePercent()));
         if (player.level().getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
             startJukeboxPlayback(player.level(), pos, jukebox.getTheItem());
         }
@@ -984,12 +989,21 @@ public final class MusicLibraryService {
                 startedAtMillis,
                 config.playbackRadiusBlocks,
                 positional,
-                positional && isJukeboxLooping(pos)
+                positional && isJukeboxLooping(pos),
+                jukeboxVolume(pos)
         );
     }
 
     private boolean isJukeboxLooping(BlockPos pos) {
         return Boolean.TRUE.equals(jukeboxLooping.get(pos));
+    }
+
+    private int jukeboxVolume(BlockPos pos) {
+        return clampVolume(jukeboxVolumes.getOrDefault(pos, 100));
+    }
+
+    private static int clampVolume(int volumePercent) {
+        return Math.max(0, Math.min(100, volumePercent));
     }
 
     private AudioCacheWarmPayload cacheWarmPayload(MusicEntry entry) {

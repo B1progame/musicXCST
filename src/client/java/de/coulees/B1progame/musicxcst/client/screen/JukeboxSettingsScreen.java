@@ -4,6 +4,7 @@ import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -24,12 +25,14 @@ public final class JukeboxSettingsScreen extends Screen {
 
     private final BlockPos pos;
     private boolean looping;
+    private int volumePercent;
     private Button loopButton;
 
-    public JukeboxSettingsScreen(BlockPos pos, boolean looping) {
+    public JukeboxSettingsScreen(BlockPos pos, boolean looping, int volumePercent) {
         super(Component.literal("Jukebox Settings"));
         this.pos = pos;
         this.looping = looping;
+        this.volumePercent = Math.max(0, Math.min(100, volumePercent));
     }
 
     @Override
@@ -42,6 +45,7 @@ public final class JukeboxSettingsScreen extends Screen {
         Button planned = addRenderableWidget(Button.builder(Component.literal("Planned"), button -> {
         }).bounds(left + 161, top + BUTTON_Y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
         planned.active = false;
+        addRenderableWidget(new VolumeSlider(left + 59, top + 101, 102, 12));
     }
 
     @Override
@@ -55,10 +59,35 @@ public final class JukeboxSettingsScreen extends Screen {
     private void toggleLooping() {
         looping = !looping;
         loopButton.setMessage(loopLabel());
-        ClientPlayNetworking.send(new JukeboxSettingsUpdatePayload(pos, looping));
+        sendSettings();
     }
 
     private Component loopLabel() {
         return Component.literal(looping ? "Loop On" : "Loop Off");
+    }
+
+    private void sendSettings() {
+        ClientPlayNetworking.send(new JukeboxSettingsUpdatePayload(pos, looping, volumePercent));
+    }
+
+    private final class VolumeSlider extends AbstractSliderButton {
+        private VolumeSlider(int x, int y, int width, int height) {
+            super(x, y, width, height, volumeLabel(), volumePercent / 100.0D);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(volumeLabel());
+        }
+
+        @Override
+        protected void applyValue() {
+            volumePercent = Math.max(0, Math.min(100, (int) Math.round(value * 100.0D)));
+            sendSettings();
+        }
+    }
+
+    private Component volumeLabel() {
+        return Component.literal("Volume " + volumePercent + "%");
     }
 }
