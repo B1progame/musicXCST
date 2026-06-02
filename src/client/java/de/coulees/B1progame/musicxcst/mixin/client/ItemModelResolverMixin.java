@@ -16,6 +16,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ItemModelResolverMixin {
     @Inject(method = "appendItemLayers", at = @At("RETURN"))
     private void musicxcst$appendCustomDiscLayer(ItemStackRenderState renderState, ItemStack stack, ItemDisplayContext displayContext, Level level, ItemOwner owner, int seed, CallbackInfo ci) {
-        CustomDiscRenderCache.appendCustomDiscLayer(renderState, stack);
+        CustomDiscRenderCache.appendCustomDiscLayer(renderState, stack, displayContext);
     }
 }

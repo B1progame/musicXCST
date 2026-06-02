@@ -69,24 +69,24 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int DESIGN_PREVIEW_X = DESIGN_PANEL_X + 10;
     private static final int DESIGN_PREVIEW_Y = DESIGN_PANEL_Y + 10;
     private static final int DESIGN_PREVIEW_CELL = 2;
-    private static final int THEME_X = DESIGN_PANEL_X + 48;
-    private static final int THEME_Y = DESIGN_PANEL_Y + 23;
-    private static final int THEME_SIZE = 6;
+    private static final int THEME_X = DESIGN_PANEL_X + 47;
+    private static final int THEME_Y = DESIGN_PANEL_Y + 22;
+    private static final int THEME_SIZE = 8;
     private static final int COLOR_PICKER_X = DESIGN_PANEL_X + 42;
     private static final int COLOR_PICKER_Y = DESIGN_PANEL_Y + 39;
     private static final int COLOR_PICKER_WIDTH = 31;
     private static final int COLOR_PICKER_HEIGHT = 12;
-    private static final int ADVANCED_BUTTON_X = DESIGN_PANEL_X + 61;
-    private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 49;
-    private static final int ADVANCED_BUTTON_WIDTH = 22;
-    private static final int ADVANCED_BUTTON_HEIGHT = 10;
-    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 4;
-    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 72;
+    private static final int ADVANCED_BUTTON_X = DESIGN_PANEL_X + 56;
+    private static final int ADVANCED_BUTTON_Y = DESIGN_PANEL_Y + 44;
+    private static final int ADVANCED_BUTTON_WIDTH = 27;
+    private static final int ADVANCED_BUTTON_HEIGHT = 11;
+    private static final int IMPORT_BOX_X = DESIGN_PANEL_X + 1;
+    private static final int IMPORT_BOX_Y = DESIGN_PANEL_Y + 95;
     private static final int IMPORT_BOX_WIDTH = 62;
     private static final int IMPORT_BOX_HEIGHT = 10;
-    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 68;
-    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 72;
-    private static final int IMPORT_BUTTON_WIDTH = 15;
+    private static final int IMPORT_BUTTON_X = DESIGN_PANEL_X + 78;
+    private static final int IMPORT_BUTTON_Y = DESIGN_PANEL_Y + 75;
+    private static final int IMPORT_BUTTON_WIDTH = 10;
     private static final int IMPORT_BUTTON_HEIGHT = 10;
     private static final String EDITOR_RESOURCE = "/assets/musicxcst/editor/disc_texture_editor.html";
     private static final long EDITOR_TIMEOUT_MILLIS = 10L * 60L * 1000L;
@@ -99,6 +99,12 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int[] THEME_COLORS = {
             0xFF0000, 0xFCFF00, 0x15FF00, 0xDF00FF, 0x009DFF, 0x3A4246
     };
+    private static final int PRESSED_NONE = -1;
+    private static final int PRESSED_WEB_EDITOR = 6;
+    private static final int PRESSED_IMPORT = 7;
+    private static final int BUTTON_HOVER_COLOR = 0xFF4A4646;
+    private static final int BUTTON_PRESSED_COLOR = 0xFFFFFFFF;
+    private static final int BUTTON_IDLE_COLOR = 0xFF202020;
 
     private EditBox nameBox;
     private EditBox pathBox;
@@ -117,6 +123,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private ExecutorService editorExecutor;
     private String editorToken;
     private long editorExpiresAtMillis;
+    private int pressedTextureButton = PRESSED_NONE;
 
     public CdWriterScreen(CdWriterMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title, GUI_WIDTH, GUI_HEIGHT);
@@ -171,7 +178,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         extractTransparentBackground(guiGraphics);
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, leftPos, topPos, 0, 0, GUI_WIDTH, GUI_HEIGHT, TEXTURE_WIDTH, TEXTURE_HEIGHT);
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, EXPLORER_BUTTON_TEXTURE, leftPos + FILE_BUTTON_X, topPos + FILE_BUTTON_Y, 0, 0, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT);
-        renderTextureEditor(guiGraphics);
+        renderTextureEditor(guiGraphics, mouseX - leftPos, mouseY - topPos);
         if (uploading) {
             guiGraphics.centeredText(this.font, progressText.isBlank() ? loadingText() : progressText, leftPos + GUI_WIDTH / 2, topPos - 13, 0xFFFFE680);
         }
@@ -182,6 +189,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
         int x = (int) event.x() - leftPos;
         int y = (int) event.y() - topPos;
+        pressedTextureButton = PRESSED_NONE;
         if (inside(x, y, FILE_BUTTON_X, FILE_BUTTON_Y, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT)) {
             openFilePicker();
             return true;
@@ -339,12 +347,14 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         return String.format(Locale.ROOT, "#%06X", textureColor());
     }
 
-    private void renderTextureEditor(GuiGraphicsExtractor guiGraphics) {
+    private void renderTextureEditor(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
         int x0 = leftPos + DESIGN_PANEL_X;
         int y0 = topPos + DESIGN_PANEL_Y;
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, DESIGN_PANEL_TEXTURE, x0, y0, 0, 0, DESIGN_PANEL_WIDTH, DESIGN_PANEL_HEIGHT, DESIGN_PANEL_WIDTH, DESIGN_PANEL_HEIGHT);
         renderDiscPreview(guiGraphics, DESIGN_PREVIEW_X, DESIGN_PREVIEW_Y, DESIGN_PREVIEW_CELL);
-        renderThemeSwatches(guiGraphics);
+        renderThemeSwatches(guiGraphics, mouseX, mouseY);
+        drawRoundedPixelButtonFeedback(guiGraphics, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT, insideRoundedPixelButton(mouseX, mouseY, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT), pressedTextureButton == PRESSED_WEB_EDITOR);
+        drawSquareButtonFeedback(guiGraphics, IMPORT_BUTTON_X, IMPORT_BUTTON_Y, IMPORT_BUTTON_WIDTH, IMPORT_BUTTON_HEIGHT, insideSquareButton(mouseX, mouseY, IMPORT_BUTTON_X, IMPORT_BUTTON_Y, IMPORT_BUTTON_WIDTH, IMPORT_BUTTON_HEIGHT), pressedTextureButton == PRESSED_IMPORT);
         drawScaledCentered(guiGraphics, "Import", leftPos + IMPORT_BUTTON_X + IMPORT_BUTTON_WIDTH / 2, topPos + IMPORT_BUTTON_Y + 2, 0.45F, 0xFFFFFFFF);
     }
 
@@ -357,6 +367,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             int sx = THEME_X + (index % 3) * 11;
             int sy = THEME_Y + (index / 3) * 11;
             if (insideThemeSwatch(x, y, sx, sy)) {
+                pressedTextureButton = index;
                 applyTheme(THEME_COLORS[index]);
                 return true;
             }
@@ -367,12 +378,14 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             return true;
         }
 
-        if (inside(x, y, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT)) {
+        if (insideRoundedPixelButton(x, y, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT)) {
+            pressedTextureButton = PRESSED_WEB_EDITOR;
             openAdvancedEditor();
             return true;
         }
 
-        if (inside(x, y, IMPORT_BUTTON_X, IMPORT_BUTTON_Y, IMPORT_BUTTON_WIDTH, IMPORT_BUTTON_HEIGHT)) {
+        if (insideSquareButton(x, y, IMPORT_BUTTON_X, IMPORT_BUTTON_Y, IMPORT_BUTTON_WIDTH, IMPORT_BUTTON_HEIGHT)) {
+            pressedTextureButton = PRESSED_IMPORT;
             importDesignId();
             return true;
         }
@@ -382,6 +395,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
 
     @Override
     public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
+        pressedTextureButton = PRESSED_NONE;
         return super.mouseReleased(event);
     }
 
@@ -456,11 +470,15 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         }
     }
 
-    private void renderThemeSwatches(GuiGraphicsExtractor guiGraphics) {
+    private void renderThemeSwatches(GuiGraphicsExtractor guiGraphics, int mouseX, int mouseY) {
         for (int index = 0; index < THEME_COLORS.length; index++) {
-            int sx = leftPos + THEME_X + (index % 3) * 11;
-            int sy = topPos + THEME_Y + (index / 3) * 11;
-            int borderColor = selectedColor == THEME_COLORS[index] ? 0xFFFFFFFF : 0xFF202020;
+            int localX = THEME_X + (index % 3) * 11;
+            int localY = THEME_Y + (index / 3) * 11;
+            int sx = leftPos + localX;
+            int sy = topPos + localY;
+            boolean hovered = insideThemeSwatch(mouseX, mouseY, localX, localY);
+            boolean pressed = pressedTextureButton == index;
+            int borderColor = themeButtonBorderColor(index, hovered, pressed);
             for (int py = 0; py < THEME_SIZE; py++) {
                 for (int px = 0; px < THEME_SIZE; px++) {
                     if (isThemeSwatchCorner(px, py)) {
@@ -471,6 +489,16 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
                 }
             }
         }
+    }
+
+    private int themeButtonBorderColor(int index, boolean hovered, boolean pressed) {
+        if (pressed || selectedColor == THEME_COLORS[index]) {
+            return BUTTON_PRESSED_COLOR;
+        }
+        if (hovered) {
+            return BUTTON_HOVER_COLOR;
+        }
+        return BUTTON_IDLE_COLOR;
     }
 
     private void copyEditorResource(Path editor) throws IOException {
@@ -730,6 +758,19 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         return x >= left && x < left + width && y >= top && y < top + height;
     }
 
+    private static boolean insideRoundedPixelButton(int x, int y, int left, int top, int width, int height) {
+        if (!inside(x, y, left, top, width, height)) {
+            return false;
+        }
+        int localX = x - left;
+        int localY = y - top;
+        return !isPixelCorner(localX, localY, width, height);
+    }
+
+    private static boolean insideSquareButton(int x, int y, int left, int top, int width, int height) {
+        return inside(x, y, left, top, width, height);
+    }
+
     private static boolean insideThemeSwatch(int x, int y, int left, int top) {
         if (!inside(x, y, left, top, THEME_SIZE, THEME_SIZE)) {
             return false;
@@ -738,7 +779,43 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     }
 
     private static boolean isThemeSwatchCorner(int x, int y) {
-        return (x == 0 || x == THEME_SIZE - 1) && (y == 0 || y == THEME_SIZE - 1);
+        return isPixelCorner(x, y, THEME_SIZE, THEME_SIZE);
+    }
+
+    private static boolean isPixelCorner(int x, int y, int width, int height) {
+        return (x == 0 || x == width - 1) && (y == 0 || y == height - 1);
+    }
+
+    private void drawRoundedPixelButtonFeedback(GuiGraphicsExtractor guiGraphics, int x, int y, int width, int height, boolean hovered, boolean pressed) {
+        int color = pressed ? BUTTON_PRESSED_COLOR : hovered ? BUTTON_HOVER_COLOR : 0;
+        if (color == 0) {
+            return;
+        }
+        int screenX = leftPos + x;
+        int screenY = topPos + y;
+        for (int py = 0; py < height; py++) {
+            for (int px = 0; px < width; px++) {
+                if (isPixelCorner(px, py, width, height)) {
+                    continue;
+                }
+                if (px == 0 || px == width - 1 || py == 0 || py == height - 1) {
+                    guiGraphics.fill(screenX + px, screenY + py, screenX + px + 1, screenY + py + 1, color);
+                }
+            }
+        }
+    }
+
+    private void drawSquareButtonFeedback(GuiGraphicsExtractor guiGraphics, int x, int y, int width, int height, boolean hovered, boolean pressed) {
+        int color = pressed ? BUTTON_PRESSED_COLOR : hovered ? BUTTON_HOVER_COLOR : 0;
+        if (color == 0) {
+            return;
+        }
+        int screenX = leftPos + x;
+        int screenY = topPos + y;
+        guiGraphics.fill(screenX, screenY, screenX + width, screenY + 1, color);
+        guiGraphics.fill(screenX, screenY + height - 1, screenX + width, screenY + height, color);
+        guiGraphics.fill(screenX, screenY, screenX + 1, screenY + height, color);
+        guiGraphics.fill(screenX + width - 1, screenY, screenX + width, screenY + height, color);
     }
 
     private void drawButton(GuiGraphicsExtractor guiGraphics, String text, int x, int y, int width, int height) {

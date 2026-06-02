@@ -16,6 +16,7 @@ import net.minecraft.client.resources.model.cuboid.ItemTransform;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix4fc;
 import org.joml.Vector3f;
@@ -40,7 +41,7 @@ public final class CustomDiscRenderCache {
     private CustomDiscRenderCache() {
     }
 
-    public static void appendCustomDiscLayer(ItemStackRenderState renderState, ItemStack stack) {
+    public static void appendCustomDiscLayer(ItemStackRenderState renderState, ItemStack stack, ItemDisplayContext displayContext) {
         if (stack.getItem() != ModItems.BLUEPRINT_CD) {
             return;
         }
@@ -96,14 +97,15 @@ public final class CustomDiscRenderCache {
 
                 int tintIndex = tints.size();
                 tints.add(color);
-                quads.add(pixelQuad(sprite, x, y, tintIndex));
+                quads.add(pixelQuad(sprite, x, y, tintIndex, Direction.SOUTH));
+                quads.add(pixelQuad(sprite, x, y, tintIndex, Direction.NORTH));
             }
         }
 
         return new CachedDesign(List.copyOf(quads), tints.stream().mapToInt(Integer::intValue).toArray());
     }
 
-    private static BakedQuad pixelQuad(TextureAtlasSprite sprite, int x, int y, int tintIndex) {
+    private static BakedQuad pixelQuad(TextureAtlasSprite sprite, int x, int y, int tintIndex, Direction direction) {
         float x0 = x / 16.0F;
         float x1 = (x + 1) / 16.0F;
         float y0 = 1.0F - (y + 1) / 16.0F;
@@ -117,7 +119,10 @@ public final class CustomDiscRenderCache {
         long uv2 = UVPair.pack(sprite.getU(16.0F), sprite.getV(0.0F));
         long uv3 = UVPair.pack(sprite.getU(0.0F), sprite.getV(0.0F));
         BakedQuad.MaterialInfo material = new BakedQuad.MaterialInfo(sprite, ChunkSectionLayer.TRANSLUCENT, Sheets.translucentItemSheet(), tintIndex, false, 0);
-        return new BakedQuad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, Direction.SOUTH, material);
+        if (direction == Direction.NORTH) {
+            return new BakedQuad(p3, p2, p1, p0, uv3, uv2, uv1, uv0, direction, material);
+        }
+        return new BakedQuad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, direction, material);
     }
 
     private record CachedDesign(List<BakedQuad> quads, int[] tints) {
