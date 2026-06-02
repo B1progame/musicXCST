@@ -145,9 +145,8 @@
       width:30px;
       height:30px;
       border-radius:9px;
-      background:
-              radial-gradient(circle at 35% 25%,rgba(255,255,255,.72),transparent 13%),
-              linear-gradient(135deg,#2dc76d,#3c8df2 62%,#d946ef);
+      object-fit:cover;
+      background:rgba(255,255,255,.06);
       box-shadow:
               0 0 26px rgba(66,211,122,.22),
               0 0 36px rgba(73,168,255,.16);
@@ -721,7 +720,7 @@
 <div class="app">
   <header class="top">
     <div class="brand">
-      <div class="mark"></div>
+      <img class="mark" src="icon.png" alt="">
       <div>MusicXCST Disc Texture Editor</div>
     </div>
     <div class="tabs">
@@ -871,8 +870,8 @@
 <script>
   const SIZE=16;
   const PIXELS=SIZE*SIZE;
-  const PREFIX="MXCST1.";
-  const PALETTE_PREFIX="MXC1:";
+  const PREFIX="MXC1:";
+  const BASE64_PREFIX="MXCST1.";
   const LEGACY_PREFIX="MXC16.";
   const CHARS="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
 
@@ -1499,7 +1498,10 @@
 
   function updateInfoText(){
     const painted=pixels.filter(p=>(p>>>24)!==0).length;
-    pixelInfo.textContent=`${painted} painted pixels`;
+    const stats=paletteStats();
+    const id=designBox.value||encodeDesignId();
+    const fallback=stats.paletteSize>CHARS.length?" · base64 fallback":"";
+    pixelInfo.textContent=`${painted} painted · ${stats.paletteSize} colors · ID ${id.length} chars${fallback}`;
     viewInfo.textContent=`${Math.round(view.zoom)}px/cell · ${tool}`;
   }
 
@@ -1644,6 +1646,34 @@
   }
 
   function encodeDesignId(data=pixels){
+    const palette=[];
+    const body=[];
+
+    for(const p of data){
+      if((p>>>24)===0){
+        body.push(".");
+        continue;
+      }
+
+      const rgb=p&0xffffff;
+      let index=palette.indexOf(rgb);
+
+      if(index<0){
+        if(palette.length>=CHARS.length){
+          return encodeBase64DesignId(data);
+        }
+
+        index=palette.length;
+        palette.push(rgb);
+      }
+
+      body.push(CHARS[index]);
+    }
+
+    return PREFIX+palette.map(rgb=>rgb.toString(16).padStart(6,"0").toUpperCase()).join(",")+";"+body.join("");
+  }
+
+  function encodeBase64DesignId(data=pixels){
     const bytes=new Uint8Array(1+PIXELS*4);
     bytes[0]=SIZE;
 
@@ -1657,10 +1687,25 @@
       );
     });
 
-    return PREFIX+btoa(String.fromCharCode(...bytes))
+    return BASE64_PREFIX+btoa(String.fromCharCode(...bytes))
             .replaceAll("+","-")
             .replaceAll("/","_")
             .replace(/=+$/,"");
+  }
+
+  function paletteStats(data=pixels){
+    const colors=new Set();
+
+    for(const p of data){
+      if((p>>>24)!==0){
+        colors.add((p&0xffffff).toString(16).padStart(6,"0").toUpperCase());
+      }
+    }
+
+    return {
+      paletteSize:colors.size,
+      tooMany:colors.size>CHARS.length
+    };
   }
 
   function decodeDesignId(id){
@@ -1668,9 +1713,11 @@
 
     id=id.trim();
 
-    if(id.startsWith(PREFIX)){
+    if(id.startsWith(PREFIX)) return decodePalette(id);
+
+    if(id.startsWith(BASE64_PREFIX)){
       try{
-        let s=id.slice(PREFIX.length).replaceAll("-","+").replaceAll("_","/");
+        let s=id.slice(BASE64_PREFIX.length).replaceAll("-","+").replaceAll("_","/");
         while(s.length%4) s+="=";
 
         const bin=atob(s);
@@ -1689,7 +1736,6 @@
       }
     }
 
-    if(id.startsWith(PALETTE_PREFIX)) return decodePalette(id);
     if(id.startsWith(LEGACY_PREFIX)) return decodeLegacy(id);
 
     return null;
@@ -1701,10 +1747,11 @@
 
       if(cut<0) return null;
 
-      const pal=id.slice(PALETTE_PREFIX.length,cut).split(",").filter(Boolean);
+      const pal=id.slice(PREFIX.length,cut).split(",").filter(Boolean);
       const body=id.slice(cut+1);
 
       if(body.length!==PIXELS||pal.length>CHARS.length) return null;
+      if(pal.some(color=>!/^[0-9a-fA-F]{6}$/.test(color))) return null;
 
       return [...body].map(ch=>{
         if(ch==="."||ch===" ") return 0;
@@ -1743,6 +1790,7 @@
 
   function updateDesignBox(){
     designBox.value=encodeDesignId();
+    updateInfoText();
   }
 
   function updateAll(){
@@ -1781,7 +1829,7 @@
 
       closeCountdown();
     }catch(e){
-      setStatus("Automatic import failed. Copy this Design ID and press Import in Minecraft.","bad");
+      setStatus("Import failed, copy the Design ID manually.","bad");
     }
   }
 

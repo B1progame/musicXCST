@@ -29,8 +29,12 @@ import java.util.Map;
 
 public final class CustomDiscRenderCache {
     private static final int MAX_CACHE_SIZE = 128;
-    private static final float FRONT_Z = 0.53125F;
-    private static final Identifier WHITE_PIXEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "custom_disc_pixel");
+    private static final float FRONT_Z = 8.53125F;
+    private static final Vector3fc[] FULL_ITEM_EXTENTS = {
+            new Vector3f(0.0F, 0.0F, FRONT_Z),
+            new Vector3f(16.0F, 16.0F, FRONT_Z)
+    };
+    private static final Identifier WHITE_PIXEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "item/custom_disc_pixel");
     private static final Map<String, CachedDesign> CACHE = new LinkedHashMap<>(16, 0.75F, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, CachedDesign> eldest) {
@@ -73,6 +77,7 @@ public final class CustomDiscRenderCache {
         layer.setItemTransform(itemTransform);
         layer.setLocalTransform(localTransform);
         layer.setUsesBlockLight(false);
+        layer.setExtents(() -> FULL_ITEM_EXTENTS);
         layer.prepareQuadList().addAll(cached.quads());
         IntList tints = layer.tintLayers();
         for (int tint : cached.tints()) {
@@ -106,10 +111,10 @@ public final class CustomDiscRenderCache {
     }
 
     private static BakedQuad pixelQuad(TextureAtlasSprite sprite, int x, int y, int tintIndex, Direction direction) {
-        float x0 = x / 16.0F;
-        float x1 = (x + 1) / 16.0F;
-        float y0 = 1.0F - (y + 1) / 16.0F;
-        float y1 = 1.0F - y / 16.0F;
+        float x0 = x;
+        float x1 = x + 1.0F;
+        float y0 = DiscData.DESIGN_SIZE - (y + 1.0F);
+        float y1 = DiscData.DESIGN_SIZE - y;
         Vector3fc p0 = new Vector3f(x0, y0, FRONT_Z);
         Vector3fc p1 = new Vector3f(x1, y0, FRONT_Z);
         Vector3fc p2 = new Vector3f(x1, y1, FRONT_Z);

@@ -62,8 +62,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int FILE_BUTTON_Y = 35;
     private static final int FILE_BUTTON_WIDTH = 20;
     private static final int FILE_BUTTON_HEIGHT = 20;
-    private static final int DESIGN_PANEL_X = 8;
-    private static final int DESIGN_PANEL_Y = 70;
+    private static final int DESIGN_PANEL_X = 9;
+    private static final int DESIGN_PANEL_Y = 71;
     private static final int DESIGN_PANEL_WIDTH = 88;
     private static final int DESIGN_PANEL_HEIGHT = 88;
     private static final int DESIGN_PREVIEW_X = DESIGN_PANEL_X + 10;
@@ -89,6 +89,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int IMPORT_BUTTON_WIDTH = 11;
     private static final int IMPORT_BUTTON_HEIGHT = 11;
     private static final String EDITOR_RESOURCE = "/assets/musicxcst/editor/disc_texture_editor.html";
+    private static final String EDITOR_ICON_RESOURCE = "/assets/musicxcst/icon.png";
     private static final long EDITOR_TIMEOUT_MILLIS = 10L * 60L * 1000L;
     private static final int MAX_CALLBACK_BYTES = 2048;
     private static final String[] SUPPORTED_FILE_PATTERNS = {
@@ -373,10 +374,11 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             }
         }
 
-        if (inside(x, y, COLOR_PICKER_X, COLOR_PICKER_Y, COLOR_PICKER_WIDTH, COLOR_PICKER_HEIGHT)) {
-            openColorPicker();
-            return true;
-        }
+        // Color picker disabled: tinyfd_colorChooser is unstable in this Minecraft/LWJGL runtime.
+        // if (inside(x, y, COLOR_PICKER_X, COLOR_PICKER_Y, COLOR_PICKER_WIDTH, COLOR_PICKER_HEIGHT)) {
+        //     openColorPicker();
+        //     return true;
+        // }
 
         if (insideRoundedPixelButton(x, y, ADVANCED_BUTTON_X, ADVANCED_BUTTON_Y, ADVANCED_BUTTON_WIDTH, ADVANCED_BUTTON_HEIGHT)) {
             pressedTextureButton = PRESSED_WEB_EDITOR;
@@ -503,11 +505,16 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
 
     private void copyEditorResource(Path editor) throws IOException {
         Files.createDirectories(editor.getParent());
-        try (InputStream stream = CdWriterScreen.class.getResourceAsStream(EDITOR_RESOURCE)) {
+        copyResource(EDITOR_RESOURCE, editor);
+        copyResource(EDITOR_ICON_RESOURCE, editor.getParent().resolve("icon.png"));
+    }
+
+    private void copyResource(String resource, Path target) throws IOException {
+        try (InputStream stream = CdWriterScreen.class.getResourceAsStream(resource)) {
             if (stream == null) {
-                throw new IOException("Missing editor resource " + EDITOR_RESOURCE);
+                throw new IOException("Missing editor resource " + resource);
             }
-            Files.copy(stream, editor, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(stream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -646,17 +653,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     }
 
     private void openColorPicker() {
-        Minecraft client = Minecraft.getInstance();
-        Thread pickerThread = new Thread(() -> {
-            String selected = TinyFileDialogs.tinyfd_colorChooser("Choose disc color", String.format(Locale.ROOT, "#%06X", selectedColor), null, null);
-            if (selected != null && selected.matches("#?[0-9a-fA-F]{6}")) {
-                String normalized = selected.startsWith("#") ? selected.substring(1) : selected;
-                int color = Integer.parseInt(normalized, 16);
-                client.execute(() -> applyTheme(color));
-            }
-        }, "musicxcst-color-picker");
-        pickerThread.setDaemon(true);
-        pickerThread.start();
+        // Disabled intentionally. Use the six preset colors or the HTML editor instead.
+        message("Color picker disabled.");
     }
 
     private String openSupportedFileDialog() {
