@@ -42,7 +42,7 @@ public final class DiscData {
         data.ownerUuid = entry.ownerUuid;
         data.ownerName = entry.ownerName;
         data.hexColor = entry.hexColor;
-        data.designPixels = defaultDesign();
+        data.designPixels = decodeDesignId(entry.designId).orElseGet(DiscData::defaultDesign);
         data.designId = encodeDesignId(data.designPixels);
         data.status = entry.status;
         data.schemaVersion = entry.schemaVersion;

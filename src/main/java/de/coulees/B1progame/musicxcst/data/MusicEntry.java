@@ -22,5 +22,6 @@ public final class MusicEntry {
     public String normalizedBitrate;
     public String status;
     public String hexColor;
+    public String designId;
     public int schemaVersion;
 }

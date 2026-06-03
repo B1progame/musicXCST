@@ -201,6 +201,7 @@ public final class MusicLibraryService {
         entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
         validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
+        entry.designId = DiscData.encodeDesignId(DiscData.defaultDesign());
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
         entry.previewSizeBytes = previewAudio.sizeBytes();
@@ -290,6 +291,7 @@ public final class MusicLibraryService {
         entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
         validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
+        entry.designId = DiscData.encodeDesignId(DiscData.sanitizeDesign(designPixels));
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
         entry.previewSizeBytes = previewAudio.sizeBytes();

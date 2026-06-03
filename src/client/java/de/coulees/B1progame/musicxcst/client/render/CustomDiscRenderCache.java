@@ -9,11 +9,11 @@ import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.renderer.Sheets;
-import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.cuboid.ItemTransform;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
+import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemDisplayContext;
@@ -104,6 +104,7 @@ public final class CustomDiscRenderCache {
         TextureAtlasSprite sprite = Minecraft.getInstance()
                 .getAtlasManager()
                 .get(Sheets.ITEMS_MAPPER.apply(WHITE_PIXEL));
+        Material.Baked material = new Material.Baked(sprite, true);
         int[] sanitized = DiscData.sanitizeDesign(pixels);
         List<BakedQuad> quads = new ArrayList<>();
         List<Integer> tints = new ArrayList<>();
@@ -117,15 +118,16 @@ public final class CustomDiscRenderCache {
 
                 int tintIndex = tints.size();
                 tints.add(color);
-                quads.add(pixelQuad(sprite, x, y, tintIndex, Direction.SOUTH));
-                quads.add(pixelQuad(sprite, x, y, tintIndex, Direction.NORTH));
+                quads.add(pixelQuad(material, x, y, tintIndex, Direction.SOUTH));
+                quads.add(pixelQuad(material, x, y, tintIndex, Direction.NORTH));
             }
         }
 
         return new CachedDesign(List.copyOf(quads), tints.stream().mapToInt(Integer::intValue).toArray());
     }
 
-    private static BakedQuad pixelQuad(TextureAtlasSprite sprite, int x, int y, int tintIndex, Direction direction) {
+    private static BakedQuad pixelQuad(Material.Baked material, int x, int y, int tintIndex, Direction direction) {
+        TextureAtlasSprite sprite = material.sprite();
         float x0 = x;
         float x1 = x + 1.0F;
         float y0 = DiscData.DESIGN_SIZE - (y + 1.0F);
@@ -138,11 +140,11 @@ public final class CustomDiscRenderCache {
         long uv1 = UVPair.pack(sprite.getU(16.0F), sprite.getV(16.0F));
         long uv2 = UVPair.pack(sprite.getU(16.0F), sprite.getV(0.0F));
         long uv3 = UVPair.pack(sprite.getU(0.0F), sprite.getV(0.0F));
-        BakedQuad.MaterialInfo material = new BakedQuad.MaterialInfo(sprite, ChunkSectionLayer.TRANSLUCENT, Sheets.translucentItemSheet(), tintIndex, false, 0);
+        BakedQuad.MaterialInfo materialInfo = BakedQuad.MaterialInfo.of(material, sprite.transparency(), tintIndex, true, 0);
         if (direction == Direction.NORTH) {
-            return new BakedQuad(p3, p2, p1, p0, uv3, uv2, uv1, uv0, direction, material);
+            return new BakedQuad(p3, p2, p1, p0, uv3, uv2, uv1, uv0, direction, materialInfo);
         }
-        return new BakedQuad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, direction, material);
+        return new BakedQuad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, direction, materialInfo);
     }
 
     private record CachedDesign(List<BakedQuad> quads, int[] tints) {

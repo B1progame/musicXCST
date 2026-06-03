@@ -857,6 +857,9 @@
         <div class="hint">
           Finish sends the Design ID to Minecraft through localhost. If that fails, copy this ID and import it manually in the CD Writer.
         </div>
+        <div class="hint" id="debugInfo">
+          ID 0 chars · 0 opaque · 0 colors · callback not sent
+        </div>
       </section>
     </aside>
   </main>
@@ -888,6 +891,7 @@
   const hex=document.getElementById("hex");
   const designBox=document.getElementById("designId");
   const statusBox=document.getElementById("status");
+  const debugInfo=document.getElementById("debugInfo");
   const zoom=document.getElementById("zoom");
   const zoomLabel=document.getElementById("zoomLabel");
   const pixelInfo=document.getElementById("pixelInfo");
@@ -919,6 +923,7 @@
   };
 
   let pixels=decodeDesignId(params.get("design")||"")||blueprintPixels();
+  let lastCallbackStatus="callback not sent";
 
   let tool="brush";
   let activeTheme="";
@@ -1503,6 +1508,7 @@
     const fallback=stats.paletteSize>CHARS.length?" · base64 fallback":"";
     pixelInfo.textContent=`${painted} painted · ${stats.paletteSize} colors · ID ${id.length} chars${fallback}`;
     viewInfo.textContent=`${Math.round(view.zoom)}px/cell · ${tool}`;
+    debugInfo.textContent=`ID ${id.length} chars · ${painted} opaque · ${stats.paletteSize} colors · ${lastCallbackStatus}${fallback}`;
   }
 
   function syncZoomUi(){
@@ -1812,11 +1818,15 @@
     }catch(e){}
 
     if(!callbackPort||!token){
+      lastCallbackStatus="callback unavailable";
+      updateInfoText();
       setStatus("Design ID copied. Paste it into Minecraft if needed.","warn");
       return;
     }
 
     try{
+      lastCallbackStatus="callback sending";
+      updateInfoText();
       const r=await fetch(`http://127.0.0.1:${callbackPort}/finish`,{
         method:"POST",
         headers:{
@@ -1825,10 +1835,19 @@
         body:new URLSearchParams({token,design:id}).toString()
       });
 
-      if(!r.ok) throw new Error(await r.text());
+      if(!r.ok){
+        const text=await r.text();
+        lastCallbackStatus=`callback failed ${r.status}`;
+        updateInfoText();
+        throw new Error(text);
+      }
 
+      lastCallbackStatus=`callback succeeded ${r.status}`;
+      updateInfoText();
       closeCountdown();
     }catch(e){
+      lastCallbackStatus=`callback failed: ${e&&e.message?e.message:"network error"}`;
+      updateInfoText();
       setStatus("Import failed, copy the Design ID manually.","bad");
     }
   }
