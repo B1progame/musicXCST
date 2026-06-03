@@ -1,123 +1,238 @@
-# musicXCST
+# MusicXCST
 
-musicXCST is a Fabric mod for Minecraft `26.1.2` that adds writable custom music CDs. Players craft a blank Blueprint CD, write audio with the CD Writer block, and play the finished disc through the mod's custom audio backend.
+MusicXCST is a Fabric mod for Minecraft `26.1.2` that adds writable custom music discs. Players can turn local audio files into Blueprint CDs, customize the disc artwork, and play the finished discs through jukeboxes without rebuilding resource packs or registering a new sound event for every song.
 
-## Versions
+The mod is built for multiplayer servers, modpacks, and creative worlds that want custom music with server-side validation, storage limits, and client-side audio caching.
 
-This repository has two distribution branches:
+## Highlights
 
-- `master`: includes bundled FFmpeg binaries for Windows x86_64 and Linux x86_64 through Git LFS.
-- `no-bundled-ffmpeg`: contains the same mod code without bundled FFmpeg binaries. Use this branch when a pack or server wants a smaller jar or wants clients to provide FFmpeg themselves.
+- Writable Blueprint CDs using the CD Writer block.
+- Custom disc names, colors, and pixel-art disc designs.
+- Local file upload workflow from the CD Writer GUI.
+- Supported input formats: `mp3`, `mp4`, `wav`, `ogg`, `flac`, `m4a`, `aac`, `webm`, and `avi`.
+- Normalized OGG Vorbis storage for consistent playback.
+- Jukebox playback through MusicXCST's custom audio engine.
+- Client audio cache with checksum validation and optional pre-download commands.
+- Server-side file size, duration, per-player file count, and storage quota controls.
+- Admin commands for importing, inspecting, deleting, repairing, and test-playing tracks.
+- No generated resource packs and no permanent registration of thousands of item textures.
 
-## CD Writer Workflow
+## Requirements
 
-1. Place the CD Writer block.
-2. Put a blank Blueprint CD in the input slot.
-3. Enter a display name for the disc.
-4. Use the file button to choose an audio file.
-5. Pick a disc color in the texture editor.
-6. Press Print and keep the GUI open until the upload/conversion finishes.
-7. Take the written Blueprint CD from the output slot.
+### Required On Servers And Clients
 
-Supported source file types are `mp3`, `mp4`, `wav`, `ogg`, `flac`, `m4a`, `aac`, `webm`, and `avi`. The client converts the chosen file to normalized OGG Vorbis before upload.
+- Minecraft `26.1.2`
+- Fabric Loader `0.19.2` or newer
+- Fabric API for `26.1.2`
+- GeckoLib `5.5.1` or newer
 
-## FFmpeg
+### FFmpeg
 
-musicXCST is designed so normal server hosters do not need to install FFmpeg globally.
-
-The default flow is client-side transcoding:
-
-1. The client selects a local file in the CD Writer GUI.
-2. The client runs FFmpeg locally and converts the audio to OGG Vorbis.
-3. The client uploads only the converted `.ogg` file to the server.
-4. The server validates, stores, and distributes the converted audio.
-
-Server-side FFmpeg is only an optional fallback for admin/server-side imports. It is disabled by default with `allowServerSideTranscoding = false`.
-
-Bundled FFmpeg binaries are loaded from:
+MusicXCST uses FFmpeg for audio probing and transcoding. The default config is:
 
 ```text
-src/main/resources/native/ffmpeg/windows-x86_64/ffmpeg.exe
-src/main/resources/native/ffmpeg/linux-x86_64/ffmpeg
-src/main/resources/native/ffmpeg/linux-aarch64/ffmpeg
-src/main/resources/native/ffmpeg/macos-x86_64/ffmpeg
-src/main/resources/native/ffmpeg/macos-aarch64/ffmpeg
+ffmpegMode = bundled
 ```
 
-At runtime the selected binary is extracted to:
+When a bundled binary is available for the platform, MusicXCST extracts it to:
 
 ```text
-config/musicxcst/native/ffmpeg/
+config/musicxcst/native/ffmpeg/<platform>/
 ```
 
-Recommended FFmpeg builds:
+Supported bundled resource locations are:
 
-- Use stable release builds.
-- Prefer LGPL builds for redistribution.
-- Do not bundle builds made with `--enable-nonfree`.
-- Avoid GPL builds unless the distribution intentionally accepts GPL obligations.
-- The mod only needs the `ffmpeg` executable with OGG Vorbis encoding support.
+```text
+native/ffmpeg/windows-x86_64/ffmpeg.exe
+native/ffmpeg/linux-x86_64/ffmpeg
+native/ffmpeg/linux-aarch64/ffmpeg
+native/ffmpeg/macos-x86_64/ffmpeg
+native/ffmpeg/macos-aarch64/ffmpeg
+```
 
-## Config
+If no bundled binary is present, set `ffmpegMode` to `system` or `path`, or upload already-normalized `.ogg` files where possible.
 
-Important config keys in `config/musicxcst.json`:
+## Installation
 
-- `ffmpegMode`: `bundled`, `system`, `path`, or `disabled`
-- `ffmpegPath`: explicit executable path when `ffmpegMode = path`
-- `audioBitrateKbps`: normalized output bitrate, usually `128` or `160`
-- `maxUploadMb`
-- `maxDurationSeconds`
-- `maxServerStorageMb`
-- `allowServerSideTranscoding`: disabled by default
-- `clientUploadBytesPerSecond`
-- `previewCacheSeconds`
+1. Install Fabric Loader for Minecraft `26.1.2`.
+2. Install Fabric API and GeckoLib.
+3. Put the MusicXCST jar in the `mods` folder on the server and on every client.
+4. Start the game/server once to generate `config/musicxcst.json`.
+5. Review server limits, FFmpeg settings, and storage settings before opening a public server.
 
-## Commands
+For modpacks, use the same MusicXCST jar and dependency versions on both sides where redistribution is permitted by the project license or written permission. The mod has client-only rendering/audio code, but the jar is intended to be installed on both client and server.
 
-Normal player commands:
+## Basic Usage
 
-- `/cstmusic help`
-- `/cstmusic list`
-- `/cstmusic info <musicId>`
-- `/cstmusic delete <musicId>`
-- `/cstmusic storage`
-- `/cstmusic download all`
-- `/cstmusic download auto <30m|1h|1h30m>`
-- `/cstmusic download off`
+1. Craft or obtain a blank Blueprint CD.
+2. Place a CD Writer block.
+3. Put the blank Blueprint CD in the CD Writer input slot.
+4. Enter a disc name.
+5. Choose a local audio file with the file button.
+6. Edit the disc color or texture.
+7. Press **Print** and keep the GUI open until upload/conversion finishes.
+8. Take the written Blueprint CD from the output slot.
+9. Play it in a jukebox.
 
-Admin-only creation/import commands:
+Useful player commands:
 
-- `/cstmusic upload <name> <localFilePath>`
-- `/cstmusic create <name> <hexColor> <location>`
-- `/cstmusic createupload <name> <hexColor> <uploadedFile>`
+```text
+/cstmusic help
+/cstmusic list
+/cstmusic info <musicId>
+/cstmusic delete <musicId>
+/cstmusic storage
+/cstmusic download all
+/cstmusic download auto <30m|1h|1h30m>
+/cstmusic download off
+```
 
-Admin management commands:
+Admin-only commands:
 
-- `/cstmusic admin storage`
-- `/cstmusic admin list [page]`
-- `/cstmusic admin info <musicId>`
-- `/cstmusic admin delete <musicId>`
-- `/cstmusic admin play <musicId>`
-- `/cstmusic admin reload`
-- `/cstmusic admin repairindex`
+```text
+/cstmusic upload <name> <localFilePath>
+/cstmusic createupload <name> <hexColor> <uploadedFile>
+/cstmusic create <name> <hexColor> <serverFilePath>
+/cstmusic admin storage
+/cstmusic admin list [page]
+/cstmusic admin info <musicId>
+/cstmusic admin delete <musicId>
+/cstmusic admin play <musicId>
+/cstmusic admin reload
+/cstmusic admin repairindex
+```
 
-## Audio Playback
+## Server Configuration
 
-The mod does not create one Minecraft sound event per uploaded song and does not require resource-pack rebuilds. Imported audio is stored as normalized OGG Vorbis and sent to clients on demand in chunks.
+Important keys in `config/musicxcst.json`:
 
-Playback flow:
+```text
+maxFileSizeBytes
+maxStoragePerPlayerBytes
+maxTotalServerStorageBytes
+allowedFileExtensions
+ffmpegMode
+ffmpegPath
+allowServerSideTranscoding
+audioBitrate
+sampleRate
+maxMusicDurationEnabled
+maxMusicDurationSeconds
+maxMusicFilesPerPlayerEnabled
+maxMusicFilesPerPlayer
+playerLimitMode
+clientUploadBytesPerSecond
+playbackRadiusBlocks
+clientCacheSizeBytes
+allowSingleplayerAbsolutePaths
+allowAdminAbsoluteServerPaths
+softDeleteEnabled
+allowFoundDiscsPlayback
+ownerOnlyPlayback
+adminBypass
+```
 
-1. A jukebox or admin command starts playback.
-2. The server sends metadata, including checksums and playback start time.
-3. The client checks its local musicXCST cache.
-4. If the full song is missing, the client can play the preview while downloading the full audio.
-5. The client verifies SHA-256 before playback.
-6. The client decodes OGG with STB Vorbis and plays through OpenAL.
+Duration limit examples:
 
-Use `/cstmusic download all` before long sessions to pre-cache active server songs. Automatic cache warming can be enabled with `/cstmusic download auto 30m`, `/cstmusic download auto 1h`, or `/cstmusic download auto 1h30m`.
+```text
+150 seconds  = 2:30
+600 seconds  = 10:00
+3600 seconds = 1:00:00
+```
 
-## Licensing And Audio Rights
+Set `maxMusicDurationEnabled` to `false` for no duration limit.
 
-musicXCST does not include copyrighted music. Users are responsible for uploading audio they have rights to use.
+Per-player file limit modes:
 
-The MusicXCST source code and assets are covered by `LICENSE.txt`. Bundled FFmpeg binaries are separate third-party executables and are covered by their own licenses and notices in `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/`.
+```text
+confirm_delete_oldest
+auto_delete_oldest
+block_new_upload
+```
+
+## Storage And Security
+
+MusicXCST stores audio metadata and normalized playback files on the server. Default storage locations are:
+
+```text
+<world>/music-import/
+<world>/music-normalized/
+<world>/data/musicxcst/music-index.json
+```
+
+Client downloads are cached locally in:
+
+```text
+<minecraft directory>/musicxcst-cache/
+```
+
+Security and safety behavior:
+
+- Players can manage only music entries they own.
+- Admin commands require server admin permission level.
+- The server validates extensions, file size, duration, quotas, checksums, and safe paths.
+- Dedicated servers cannot read arbitrary files from a player's computer through commands.
+- Absolute server paths are disabled by default on dedicated servers.
+- Audio chunks sent to clients are bounded and verified with SHA-256.
+- Users and server operators are responsible for uploaded audio rights.
+
+## FFmpeg And Media Notes
+
+MusicXCST invokes FFmpeg as a separate executable process. It does not link FFmpeg libraries into the mod jar.
+
+Packagers should verify the exact FFmpeg build before distributing a bundled jar:
+
+- Prefer stable LGPL builds.
+- Do not distribute builds configured with `--enable-nonfree`.
+- Avoid GPL builds unless the pack intentionally accepts GPL distribution obligations.
+- Include FFmpeg license files, source/build URLs, configure flags, and checksums in `licenses/ffmpeg/`.
+
+See:
+
+- `THIRD_PARTY_NOTICES.md`
+- `licenses/ffmpeg/README.md`
+- `src/main/resources/musicxcst/ffmpeg/README.md`
+
+## For Modpack Creators
+
+- Confirm redistribution permission before publishing a pack that includes the MusicXCST jar.
+- Use MusicXCST on both client and server.
+- Include Fabric API and GeckoLib.
+- Decide whether the pack ships bundled FFmpeg binaries or expects system/path FFmpeg.
+- Review server defaults before publishing a public pack.
+- Do not include copyrighted music unless the pack has permission to distribute it.
+- Keep the license and third-party notice files with the mod distribution.
+
+## Known Limitations
+
+- MusicXCST targets Minecraft `26.1.2`; other versions are not guaranteed.
+- FFmpeg availability depends on bundled binaries, system installation, or explicit config.
+- Very large libraries can consume server disk space quickly without quotas.
+- Playback uses a custom client audio path, so every listener needs the mod installed.
+- Network latency and cache misses can delay full-track playback while audio chunks download.
+- Advanced custom disc texture rendering is client-side and falls back to the Blueprint CD if item data is missing or corrupt.
+
+## Roadmap
+
+Planned or likely future improvements:
+
+- More polished CD Writer and jukebox UX.
+- Better continuous range tracking for listeners entering or leaving playback radius.
+- Stronger audio preview and seek handling for long tracks.
+- Expanded server moderation tools for public music libraries.
+- More robust custom disc texture tooling and import/export workflows.
+- Optional integration points for permission mods or server dashboards.
+
+## Credits
+
+- Created by B1progame.
+- Built for Fabric with Fabric API.
+- Uses GeckoLib for animated block rendering.
+- Uses FFmpeg as an optional/bundled external media executable.
+- Uses Minecraft client audio facilities plus STB Vorbis/OpenAL for custom playback.
+
+## License
+
+MusicXCST source code, artwork, models, sounds, and original project files are all rights reserved unless a file states otherwise. See `LICENSE`.
+
+Bundled third-party executables, including FFmpeg binaries, are covered by their own upstream licenses. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/`.

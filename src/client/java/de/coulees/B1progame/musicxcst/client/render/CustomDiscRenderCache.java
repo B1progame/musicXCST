@@ -23,9 +23,11 @@ import org.joml.Vector3f;
 import org.joml.Vector3fc;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public final class CustomDiscRenderCache {
     private static final int MAX_CACHE_SIZE = 128;
@@ -35,6 +37,7 @@ public final class CustomDiscRenderCache {
             new Vector3f(16.0F, 16.0F, FRONT_Z)
     };
     private static final Identifier WHITE_PIXEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "item/custom_disc_pixel");
+    private static final Set<String> LOGGED_CONTEXTS = new HashSet<>();
     private static final Map<String, CachedDesign> CACHE = new LinkedHashMap<>(16, 0.75F, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, CachedDesign> eldest) {
@@ -56,7 +59,11 @@ public final class CustomDiscRenderCache {
         }
 
         String designId = DiscData.encodeDesignId(data.designPixels);
-        CachedDesign cached = CACHE.computeIfAbsent(designId, ignored -> bake(data.designPixels));
+        logContextOnce(displayContext, designId, data.designPixels);
+        CachedDesign cached = CACHE.computeIfAbsent(designId, ignored -> {
+            Musicxcst.LOGGER.info("Custom disc render cache baking design {}", DiscData.designDebugSummary(data.designPixels));
+            return bake(data.designPixels);
+        });
         if (cached.quads().isEmpty()) {
             return;
         }
@@ -76,12 +83,20 @@ public final class CustomDiscRenderCache {
         ItemStackRenderState.LayerRenderState layer = renderState.newLayer();
         layer.setItemTransform(itemTransform);
         layer.setLocalTransform(localTransform);
-        layer.setUsesBlockLight(false);
+        layer.setUsesBlockLight(sourceAccessor.musicxcst$getUsesBlockLight());
+        layer.setFoilType(sourceAccessor.musicxcst$getFoilType());
         layer.setExtents(() -> FULL_ITEM_EXTENTS);
         layer.prepareQuadList().addAll(cached.quads());
         IntList tints = layer.tintLayers();
         for (int tint : cached.tints()) {
             tints.add(tint);
+        }
+    }
+
+    private static void logContextOnce(ItemDisplayContext displayContext, String designId, int[] pixels) {
+        String key = displayContext.name() + ":" + designId;
+        if (LOGGED_CONTEXTS.add(key)) {
+            Musicxcst.LOGGER.info("Custom disc renderer received {} design {}", displayContext, DiscData.designDebugSummary(pixels));
         }
     }
 

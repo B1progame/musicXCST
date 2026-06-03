@@ -26,6 +26,9 @@ import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
+import de.coulees.B1progame.musicxcst.network.JukeboxVolumeUpdatePayload;
+import de.coulees.B1progame.musicxcst.network.MusicLimitConfirmPayload;
+import de.coulees.B1progame.musicxcst.network.MusicLimitConfirmResponsePayload;
 import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackRangeTracker;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackSessionManager;
@@ -84,6 +87,7 @@ public final class MusicLibraryService {
     private final Map<UUID, Long> playerAutoDownloadIntervals = new LinkedHashMap<>();
     private final Map<UUID, Long> nextPlayerAutoDownloadTick = new LinkedHashMap<>();
     private final Map<String, PendingClientUpload> pendingClientUploads = new LinkedHashMap<>();
+    private final Map<UUID, PendingLimitConfirmation> pendingLimitConfirmations = new LinkedHashMap<>();
     private final FfmpegLocator ffmpegLocator = new FfmpegLocator();
     private final MediaTranscoder mediaTranscoder = new MediaTranscoder();
     private MinecraftServer server;
@@ -110,6 +114,7 @@ public final class MusicLibraryService {
         playerAutoDownloadIntervals.clear();
         nextPlayerAutoDownloadTick.clear();
         pendingClientUploads.clear();
+        pendingLimitConfirmations.clear();
         saveConfig();
         saveIndex();
         this.server = null;
@@ -119,6 +124,7 @@ public final class MusicLibraryService {
         playbackSessions.unmarkListeningEverywhere(player.getUUID());
         nextPlayerAutoDownloadTick.remove(player.getUUID());
         pendingClientUploads.values().removeIf(upload -> upload.ownerUuid().equals(player.getUUID()));
+        pendingLimitConfirmations.remove(player.getUUID());
     }
 
     public void onServerTick(MinecraftServer server) {
@@ -169,6 +175,7 @@ public final class MusicLibraryService {
         if (selected.getItem() != ModItems.BLUEPRINT_CD) {
             throw new IllegalArgumentException("Hold a Blueprint CD in your selected slot first.");
         }
+        enforcePlayerFileLimitOrThrow(player);
 
         String musicId = UUID.randomUUID().toString().replace("-", "");
         ImportedMusicFile importedFile = resolveMusicFile(source, player, requestedLocation, musicId);
@@ -192,6 +199,7 @@ public final class MusicLibraryService {
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
         entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
+        validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
@@ -224,10 +232,14 @@ public final class MusicLibraryService {
 
     public String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName) {
         ensureServer();
-        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, DiscData.defaultDesign(), player.getInventory().getSelectedItem(), null);
+        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, DiscData.defaultDesign(), player.getInventory().getSelectedItem(), null, false);
     }
 
-    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, int[] designPixels, ItemStack selected, @Nullable Runnable inventoryChanged) {
+    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, int[] designPixels, ItemStack selected, @Nullable Runnable inventoryChanged, boolean skipPlayerFileLimit) {
+        if (!skipPlayerFileLimit) {
+            enforcePlayerFileLimitOrThrow(player);
+        }
+        Musicxcst.LOGGER.info("CD Writer server creating disc with design {}", DiscData.designDebugSummary(designPixels));
         String displayName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
@@ -276,6 +288,7 @@ public final class MusicLibraryService {
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
         entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
+        validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
@@ -294,10 +307,14 @@ public final class MusicLibraryService {
         data.designId = DiscData.encodeDesignId(data.designPixels);
         if (selected.getCount() == 1) {
             DiscData.writeToStack(selected, data);
+            DiscData writtenData = DiscData.fromStack(selected);
+            Musicxcst.LOGGER.info("CD Writer server selected stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
         } else {
             selected.shrink(1);
             ItemStack written = new ItemStack(ModItems.BLUEPRINT_CD);
             DiscData.writeToStack(written, data);
+            DiscData writtenData = DiscData.fromStack(written);
+            Musicxcst.LOGGER.info("CD Writer server new stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
             if (!player.getInventory().add(written)) {
                 player.drop(written, false);
             }
@@ -460,6 +477,10 @@ public final class MusicLibraryService {
     }
 
     public void writeCdFromUploadedFile(ServerPlayer player, CdWriterWritePayload payload) {
+        writeCdFromUploadedFile(player, payload, false);
+    }
+
+    private void writeCdFromUploadedFile(ServerPlayer player, CdWriterWritePayload payload, boolean skipPlayerFileLimit) {
         ensureServer();
         BlockPos pos = payload.pos().immutable();
         if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity blockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
@@ -476,10 +497,16 @@ public final class MusicLibraryService {
                 player.sendSystemMessage(Component.literal("Take the finished CD out of the CD Writer first."));
                 return;
             }
+            if (!skipPlayerFileLimit && !preparePlayerFileLimitForCdWriter(player, payload)) {
+                return;
+            }
+            Musicxcst.LOGGER.info("CD Writer server received payload design {}", DiscData.designDebugSummary(payload.designPixels()));
             blockEntity.setConverting(true);
             menu.setConverting(true);
-            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designPixels(), menu.inputStack(), menu::inputChanged);
+            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designPixels(), menu.inputStack(), menu::inputChanged, true);
             menu.moveInputToOutput();
+            DiscData outputData = DiscData.fromStack(menu.getSlot(CdWriterMenu.OUTPUT_SLOT).getItem());
+            Musicxcst.LOGGER.info("CD Writer server output slot after move {}", outputData == null ? "missing disc data" : DiscData.designDebugSummary(outputData.designPixels));
             player.sendSystemMessage(Component.literal(result));
         } catch (IllegalArgumentException exception) {
             player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
@@ -498,6 +525,29 @@ public final class MusicLibraryService {
         }
     }
 
+    public void handleMusicLimitConfirmation(ServerPlayer player, MusicLimitConfirmResponsePayload payload) {
+        ensureServer();
+        PendingLimitConfirmation pending = pendingLimitConfirmations.remove(player.getUUID());
+        if (pending == null || !pending.payload().pos().equals(payload.pos())) {
+            player.sendSystemMessage(Component.literal("No pending music limit confirmation."));
+            return;
+        }
+        if (!payload.confirmed()) {
+            player.sendSystemMessage(Component.literal("Music upload cancelled."));
+            finishCdWriterClient(player, payload.pos());
+            return;
+        }
+
+        try {
+            deleteOldestOwnedEntryForLimit(player);
+            player.sendSystemMessage(Component.literal("Your oldest uploaded track was deleted to make space."));
+            writeCdFromUploadedFile(player, pending.payload(), true);
+        } catch (IllegalArgumentException exception) {
+            player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
+            finishCdWriterClient(player, payload.pos());
+        }
+    }
+
     public void updateJukeboxSettings(ServerPlayer player, JukeboxSettingsUpdatePayload payload) {
         ensureServer();
         BlockPos pos = payload.pos().immutable();
@@ -507,6 +557,7 @@ public final class MusicLibraryService {
 
         jukeboxLooping.put(pos, payload.looping());
         jukeboxVolumes.put(pos, clampVolume(payload.volumePercent()));
+        sendJukeboxVolumeUpdate(player.level(), pos, clampVolume(payload.volumePercent()));
         if (player.level().getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
             startJukeboxPlayback(player.level(), pos, jukebox.getTheItem());
         }
@@ -514,6 +565,17 @@ public final class MusicLibraryService {
 
     public void startClientUpload(ServerPlayer player, ClientMusicUploadStartPayload payload) {
         ensureServer();
+        if (config.maxMusicFilesPerPlayerEnabled && isPlayerFileLimitReached(player)) {
+            String mode = playerLimitMode();
+            if ("block_new_upload".equals(mode)) {
+                player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Delete an old upload before creating a new one."));
+                return;
+            }
+            if ("auto_delete_oldest".equals(mode)) {
+                deleteOldestOwnedEntryForLimit(player);
+                player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+            }
+        }
         if (payload.sizeBytes() <= 0L || payload.sizeBytes() > config.maxFileSizeBytes) {
             throw new IllegalArgumentException("Upload file size is not allowed.");
         }
@@ -862,6 +924,22 @@ public final class MusicLibraryService {
         }
     }
 
+    private void sendJukeboxVolumeUpdate(Level level, BlockPos pos, int volumePercent) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        PlaybackSessionManager.PlaybackSession session = playbackSessions.session(pos);
+        int radius = session == null ? config.playbackRadiusBlocks : session.radiusBlocks();
+        Vec3 center = Vec3.atCenterOf(pos);
+        JukeboxVolumeUpdatePayload payload = new JukeboxVolumeUpdatePayload(pos.immutable(), clampVolume(volumePercent));
+        for (ServerPlayer listener : serverLevel.players()) {
+            if (listener.position().distanceToSqr(center) <= (double) radius * radius
+                    && ServerPlayNetworking.canSend(listener, JukeboxVolumeUpdatePayload.TYPE)) {
+                ServerPlayNetworking.send(listener, payload);
+            }
+        }
+    }
+
     private void stopFinishedJukeboxPlayback(PlaybackSessionManager.PlaybackSession session) {
         ServerLevel level = server.getLevel(session.dimension());
         if (level == null) {
@@ -1205,6 +1283,120 @@ public final class MusicLibraryService {
         }
     }
 
+    private void enforcePlayerFileLimitOrThrow(ServerPlayer player) {
+        if (!isPlayerFileLimitReached(player)) {
+            return;
+        }
+
+        String mode = playerLimitMode();
+        if ("auto_delete_oldest".equals(mode)) {
+            deleteOldestOwnedEntryForLimit(player);
+            player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+            return;
+        }
+        if ("block_new_upload".equals(mode)) {
+            throw new IllegalArgumentException("You reached the limit of " + playerFileLimit() + " music files. Delete an old upload before creating a new one.");
+        }
+        throw new IllegalArgumentException("You reached the limit of " + playerFileLimit() + " music files. Use the CD Writer GUI to confirm deleting your oldest uploaded track.");
+    }
+
+    private boolean preparePlayerFileLimitForCdWriter(ServerPlayer player, CdWriterWritePayload payload) {
+        if (!isPlayerFileLimitReached(player)) {
+            return true;
+        }
+
+        String mode = playerLimitMode();
+        if ("auto_delete_oldest".equals(mode)) {
+            deleteOldestOwnedEntryForLimit(player);
+            player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+            return true;
+        }
+        if ("block_new_upload".equals(mode)) {
+            throw new IllegalArgumentException("You reached the limit of " + playerFileLimit() + " music files. Delete an old upload before creating a new one.");
+        }
+
+        pendingLimitConfirmations.put(player.getUUID(), new PendingLimitConfirmation(payload));
+        if (ServerPlayNetworking.canSend(player, MusicLimitConfirmPayload.TYPE)) {
+            ServerPlayNetworking.send(player, new MusicLimitConfirmPayload(payload.pos(), playerFileLimit()));
+        }
+        player.sendSystemMessage(Component.literal("You have reached the server limit of " + playerFileLimit() + " music files. Continuing will delete your oldest uploaded track."));
+        return false;
+    }
+
+    private boolean isPlayerFileLimitReached(ServerPlayer player) {
+        if (!config.maxMusicFilesPerPlayerEnabled) {
+            return false;
+        }
+        int limit = playerFileLimit();
+        return limit >= 0 && activeOwnedEntries(player).size() >= limit;
+    }
+
+    private int playerFileLimit() {
+        return Math.max(0, config.maxMusicFilesPerPlayer);
+    }
+
+    private String playerLimitMode() {
+        String mode = config.playerLimitMode == null ? "" : config.playerLimitMode.trim().toLowerCase(Locale.ROOT);
+        return switch (mode) {
+            case "auto_delete_oldest", "block_new_upload" -> mode;
+            default -> "confirm_delete_oldest";
+        };
+    }
+
+    private List<MusicEntry> activeOwnedEntries(ServerPlayer player) {
+        String owner = player.getUUID().toString();
+        return entries.values().stream()
+                .filter(entry -> Objects.equals(entry.ownerUuid, owner))
+                .filter(entry -> !MusicStatus.DELETED.equals(entry.status))
+                .sorted(Comparator.comparingLong(entry -> entry.createdAtEpochMillis))
+                .toList();
+    }
+
+    private void deleteOldestOwnedEntryForLimit(ServerPlayer player) {
+        MusicEntry oldest = activeOwnedEntries(player).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("No owned music entry is available to delete."));
+        stopPlaybackForEntry(oldest.musicId);
+        deleteEntryFiles(oldest);
+        oldest.status = MusicStatus.DELETED;
+        saveIndex();
+        syncAllPlayers();
+        Musicxcst.LOGGER.info("Deleted oldest music entry '{}' for player {} due to file limit.", oldest.musicId, player.getName().getString());
+    }
+
+    private void stopPlaybackForEntry(String musicId) {
+        for (PlaybackSessionManager.PlaybackSession session : playbackSessions.sessions().values()) {
+            if (Objects.equals(session.musicId(), musicId)) {
+                ServerLevel level = server.getLevel(session.dimension());
+                if (level != null) {
+                    stopJukeboxPlayback(level, session.sourcePos());
+                } else {
+                    playbackSessions.stop(session.sourcePos());
+                }
+            }
+        }
+    }
+
+    private void deleteEntryFiles(MusicEntry entry) {
+        deleteEntryFile(importRoot, entry.safeRelativePath);
+        deleteEntryFile(normalizedRoot, entry.normalizedRelativePath);
+        deleteEntryFile(normalizedRoot, entry.previewRelativePath);
+    }
+
+    private void deleteEntryFile(Path root, String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        Path file = root.resolve(relativePath).normalize();
+        if (!file.startsWith(root)) {
+            throw new IllegalArgumentException("Refusing to delete a music file outside its storage root.");
+        }
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("Failed to delete old music file " + file.getFileName() + ".", exception);
+        }
+    }
+
     private void validateFile(Path resolved, long fileSize) {
         if (!Files.isRegularFile(resolved)) {
             throw new IllegalArgumentException("Music file not found in server import folder.");
@@ -1223,6 +1415,31 @@ public final class MusicLibraryService {
         if (!config.allowedFileExtensions.contains(extension)) {
             throw new IllegalArgumentException("Extension ." + extension + " is not allowed.");
         }
+    }
+
+    private void validateMusicDuration(long durationMillis) {
+        if (!config.maxMusicDurationEnabled) {
+            return;
+        }
+        int maxSeconds = Math.max(1, config.maxMusicDurationSeconds);
+        if (durationMillis <= 0L) {
+            Musicxcst.LOGGER.warn("Could not determine uploaded track duration; rejecting upload because maxMusicDurationEnabled is true.");
+            throw new IllegalArgumentException("Could not determine track duration for the configured duration limit.");
+        }
+        long durationSeconds = (durationMillis + 999L) / 1000L;
+        if (durationSeconds > maxSeconds) {
+            throw new IllegalArgumentException("This track is too long. Maximum allowed duration: " + formatDuration(maxSeconds) + ".");
+        }
+    }
+
+    private static String formatDuration(long totalSeconds) {
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        if (hours > 0L) {
+            return String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format(Locale.ROOT, "%d:%02d", minutes, seconds);
     }
 
     private NormalizedAudio normalizeAudio(ServerPlayer player, Path source, String musicId, long sourceSizeBytes) {
@@ -1529,6 +1746,9 @@ public final class MusicLibraryService {
     }
 
     private record NormalizedAudio(String safeRelativePath, long sizeBytes, String sha256) {
+    }
+
+    private record PendingLimitConfirmation(CdWriterWritePayload payload) {
     }
 
     private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {

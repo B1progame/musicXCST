@@ -111,10 +111,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private EditBox pathBox;
     private EditBox designIdBox;
     private final int[] discPixels = new int[16 * 16];
-    private final int[] savedDiscPixels = new int[16 * 16];
+    private String currentDesignId = "";
     private int selectedColor = 0x00AAFF;
-    private int savedColor = selectedColor;
-    private boolean textureSaved;
     private boolean uploading;
     private int ticks;
     private String progressText = "";
@@ -131,7 +129,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         this.titleLabelX = -1000;
         this.inventoryLabelX = -1000;
         resetWorkingDesign();
-        saveWorkingDesign();
+        syncCurrentDesign();
     }
 
     @Override
@@ -305,8 +303,10 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         uploading = true;
         progressText = "Starting upload...";
         Minecraft client = Minecraft.getInstance();
+        int[] payloadDesign = designForWrite();
+        Musicxcst.LOGGER.info("CD Writer client sending design {}", DiscData.designDebugSummary(payloadDesign));
         int started = ClientMusicUploader.startUpload(client, name, path, uploadedFileName ->
-                ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileName, designForWrite())), progress -> this.progressText = progress);
+                ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileName, payloadDesign)), progress -> this.progressText = progress);
         if (started == 0) {
             uploading = false;
             progressText = "";
@@ -418,7 +418,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         int[] theme = DiscData.themedBlueprintDesign(color);
         System.arraycopy(theme, 0, discPixels, 0, discPixels.length);
         selectedColor = color;
-        saveWorkingDesign();
+        syncCurrentDesign();
     }
 
     private void resetWorkingDesign() {
@@ -427,19 +427,24 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         selectedColor = 0x38BDF8;
     }
 
-    private void saveWorkingDesign() {
-        System.arraycopy(DiscData.sanitizeDesign(discPixels), 0, savedDiscPixels, 0, savedDiscPixels.length);
-        savedColor = selectedColor;
-        textureSaved = true;
+    private void syncCurrentDesign() {
+        int[] sanitized = DiscData.sanitizeDesign(discPixels);
+        System.arraycopy(sanitized, 0, discPixels, 0, discPixels.length);
+        currentDesignId = DiscData.encodeDesignId(discPixels);
         updateDesignIdBox();
     }
 
     private void importDesignId() {
         String designId = designIdBox.getValue().trim();
         DiscData.decodeDesignId(designId).ifPresentOrElse(pixels -> {
+            if (pixels.length != DiscData.DESIGN_PIXELS) {
+                message("Invalid disc design ID.");
+                return;
+            }
             System.arraycopy(pixels, 0, discPixels, 0, discPixels.length);
             selectedColor = textureColor(pixels);
-            saveWorkingDesign();
+            syncCurrentDesign();
+            Musicxcst.LOGGER.info("CD Writer manual import design {}", DiscData.designDebugSummary(discPixels));
             message("Imported disc design.");
         }, () -> message("Invalid disc design ID."));
     }
@@ -456,8 +461,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
                     .normalize();
             copyEditorResource(editor);
             int port = startEditorServer(client);
-            String designId = DiscData.encodeDesignId(discPixels);
-            String uri = editor.toUri() + "?port=" + port + "&token=" + editorToken + "&design=" + urlEncode(designId);
+            syncCurrentDesign();
+            String uri = editor.toUri() + "?port=" + port + "&token=" + editorToken + "&design=" + urlEncode(currentDesignId);
             Util.getPlatform().openUri(URI.create(uri));
             message("Texture editor opened.");
         } catch (IOException exception) {
@@ -468,7 +473,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
 
     private void updateDesignIdBox() {
         if (designIdBox != null) {
-            designIdBox.setValue(DiscData.encodeDesignId(discPixels));
+            designIdBox.setValue(currentDesignId);
         }
     }
 
@@ -564,7 +569,8 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             client.execute(() -> {
                 System.arraycopy(pixels, 0, discPixels, 0, discPixels.length);
                 selectedColor = textureColor(pixels);
-                saveWorkingDesign();
+                syncCurrentDesign();
+                Musicxcst.LOGGER.info("CD Writer HTML import design {}", DiscData.designDebugSummary(discPixels));
                 message("Design imported into Minecraft.");
                 stopEditorServer();
             });
@@ -679,7 +685,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         if (nameBox == null || pathBox == null || designIdBox == null) {
             return;
         }
-        SAVED_STATES.put(menu.pos(), new ScreenState(nameBox.getValue(), pathBox.getValue(), designIdBox.getValue(), selectedFile, DiscData.sanitizeDesign(discPixels), DiscData.sanitizeDesign(savedDiscPixels), selectedColor, savedColor, textureSaved));
+        SAVED_STATES.put(menu.pos(), new ScreenState(nameBox.getValue(), pathBox.getValue(), currentDesignId, selectedFile, DiscData.sanitizeDesign(discPixels), selectedColor));
     }
 
     private void restoreState() {
@@ -691,13 +697,11 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         updatingPathBox = true;
         pathBox.setValue(state.path);
         updatingPathBox = false;
-        designIdBox.setValue(state.designId);
         selectedFile = state.selectedFile;
         System.arraycopy(DiscData.sanitizeDesign(state.discPixels), 0, discPixels, 0, discPixels.length);
-        System.arraycopy(DiscData.sanitizeDesign(state.savedDiscPixels), 0, savedDiscPixels, 0, savedDiscPixels.length);
         selectedColor = state.selectedColor;
-        savedColor = state.savedColor;
-        textureSaved = state.textureSaved;
+        currentDesignId = state.designId;
+        syncCurrentDesign();
     }
 
     private String shortenFileName(String fileName, int maxWidth) {
@@ -718,11 +722,11 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     }
 
     private int textureColor() {
-        return textureColor(designForWrite());
+        return textureColor(discPixels);
     }
 
     private int[] designForWrite() {
-        return DiscData.sanitizeDesign(textureSaved ? savedDiscPixels : discPixels);
+        return DiscData.sanitizeDesign(discPixels);
     }
 
     private int textureColor(int[] pixels) {
@@ -854,6 +858,6 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         }
     }
 
-    private record ScreenState(String name, String path, String designId, Path selectedFile, int[] discPixels, int[] savedDiscPixels, int selectedColor, int savedColor, boolean textureSaved) {
+    private record ScreenState(String name, String path, String designId, Path selectedFile, int[] discPixels, int selectedColor) {
     }
 }

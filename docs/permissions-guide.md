@@ -1,7 +1,37 @@
 # Permissions Guide
 
-Normal players can manage only music entries they own. Ownership is stored as the creator's UUID in the metadata index and on written disc data.
+MusicXCST separates physical disc ownership from stored audio ownership.
 
-Admins can inspect, delete, repair, reload, and test-play any music entry.
+## Player Ownership
 
-Physical discs can be traded or taken like normal items. This does not transfer ownership of the stored audio entry. Future playback policy is controlled by config fields for found-disc playback, owner-only playback, and admin bypass.
+Each stored music entry records the creator's UUID and name in the server music index. Written Blueprint CDs also carry disc metadata on the `ItemStack`.
+
+Normal players can:
+
+- list their own entries
+- inspect their own entries
+- delete their own entries
+- create discs through the CD Writer
+- manage local cache downloads
+
+Physical discs can still be traded, stored, dropped, or taken like normal items. Trading a disc does not transfer ownership of the server-side audio entry.
+
+## Admin Access
+
+Admins can inspect, delete, repair, reload, and test-play any music entry. Admin commands require the server's admin permission level.
+
+Relevant config fields:
+
+```text
+allowFoundDiscsPlayback
+ownerOnlyPlayback
+adminBypass
+allowAdminAbsoluteServerPaths
+```
+
+## Public Server Recommendations
+
+- Keep `allowAdminAbsoluteServerPaths` disabled unless all admins are trusted with server filesystem access.
+- Enable size, duration, and per-player file limits.
+- Use `block_new_upload` or `confirm_delete_oldest` for stricter public moderation.
+- Make server rules clear: players must only upload audio they have rights to use.

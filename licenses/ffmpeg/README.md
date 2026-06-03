@@ -17,11 +17,11 @@ Current bundled binary sources:
 
 Expected binary resource locations:
 
-- `src/main/resources/native/ffmpeg/windows-x86_64/ffmpeg.exe`
-- `src/main/resources/native/ffmpeg/linux-x86_64/ffmpeg`
-- `src/main/resources/native/ffmpeg/linux-aarch64/ffmpeg`
-- `src/main/resources/native/ffmpeg/macos-x86_64/ffmpeg`
-- `src/main/resources/native/ffmpeg/macos-aarch64/ffmpeg`
+- `native/ffmpeg/windows-x86_64/ffmpeg.exe`
+- `native/ffmpeg/linux-x86_64/ffmpeg`
+- `native/ffmpeg/linux-aarch64/ffmpeg`
+- `native/ffmpeg/macos-x86_64/ffmpeg`
+- `native/ffmpeg/macos-aarch64/ffmpeg`
 
 At runtime the selected binary is extracted to `config/musicxcst/native/ffmpeg/`.
 

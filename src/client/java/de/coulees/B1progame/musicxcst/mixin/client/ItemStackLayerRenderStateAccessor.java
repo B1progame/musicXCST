@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst.mixin.client;
 
 import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.item.ItemStackRenderState.FoilType;
 import net.minecraft.client.resources.model.cuboid.ItemTransform;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,4 +14,10 @@ public interface ItemStackLayerRenderStateAccessor {
 
     @Accessor("localTransform")
     Matrix4f musicxcst$getLocalTransform();
+
+    @Accessor("usesBlockLight")
+    boolean musicxcst$getUsesBlockLight();
+
+    @Accessor("foilType")
+    FoilType musicxcst$getFoilType();
 }

@@ -15,6 +15,13 @@ public final class CstMusicConfig {
     public int audioBitrateKbps = 128;
     public int maxUploadMb = 25;
     public int maxDurationSeconds = 0;
+    public boolean maxMusicDurationEnabled = true;
+    public int maxMusicDurationSeconds = 600;
+    public String maxMusicDurationExamples = "150 seconds = 2:30, 600 seconds = 10:00, 3600 seconds = 1:00:00. Set maxMusicDurationEnabled=false for no limit.";
+    public boolean maxMusicFilesPerPlayerEnabled = false;
+    public int maxMusicFilesPerPlayer = 10;
+    public String playerLimitMode = "confirm_delete_oldest";
+    public String playerLimitModeExamples = "confirm_delete_oldest, auto_delete_oldest, block_new_upload";
     public int maxServerStorageMb = 2048;
     public boolean allowServerSideTranscoding = false;
     public String audioBitrate = "128k";

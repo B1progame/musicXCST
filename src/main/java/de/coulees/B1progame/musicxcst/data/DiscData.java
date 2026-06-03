@@ -72,7 +72,7 @@ public final class DiscData {
         if (storedPixels.isPresent() && storedPixels.get().length == DESIGN_PIXELS) {
             data.designPixels = sanitizeDesign(storedPixels.get());
         } else {
-            data.designPixels = decodeDesignId(storedDesignId).orElseGet(DiscData::defaultDesign);
+        data.designPixels = decodeDesignId(storedDesignId).orElseGet(DiscData::defaultDesign);
         }
         data.designId = encodeDesignId(data.designPixels);
         data.status = tag.getStringOr("status", MusicStatus.INVALID);
@@ -88,6 +88,7 @@ public final class DiscData {
         tag.putString("ownerName", data.ownerName);
         tag.putString("hexColor", data.hexColor);
         int[] sanitizedDesign = sanitizeDesign(data.designPixels);
+        Musicxcst.LOGGER.info("DiscData.writeToStack design {}", designDebugSummary(sanitizedDesign));
         tag.putString("designId", encodeDesignId(sanitizedDesign));
         tag.putIntArray("designPixels", sanitizedDesign);
         tag.putString("status", data.status);
@@ -205,6 +206,19 @@ public final class DiscData {
 
     public static int sanitizeDesignPixel(int pixel) {
         return (pixel >>> 24) == 0 ? 0 : 0xFF000000 | (pixel & 0x00FFFFFF);
+    }
+
+    public static String designDebugSummary(int[] pixels) {
+        int[] sanitized = sanitizeDesign(pixels);
+        int opaque = 0;
+        long checksum = 1125899906842597L;
+        for (int pixel : sanitized) {
+            if ((pixel >>> 24) != 0) {
+                opaque++;
+            }
+            checksum = checksum * 31L + pixel;
+        }
+        return "size=" + sanitized.length + ", opaque=" + opaque + ", checksum=" + Long.toUnsignedString(checksum, 16);
     }
 
     public static String encodeDesignId(int[] pixels) {

@@ -1,68 +1,33 @@
-# Future CD Writer Plan
+# CD Writer And Roadmap Notes
 
-## Planned Block
+The CD Writer is the main player-facing workstation for MusicXCST.
 
-The future workstation is a dedicated CD Writer block for `musicXCST`.
+## Current Workflow
 
-Recipe idea:
+- Place a Blueprint CD in the input slot.
+- Enter a disc name.
+- Select a local audio file.
+- Customize the disc color or texture.
+- Print the disc and wait for upload/conversion to finish.
+- Take the written Blueprint CD from the output slot.
 
-- crafting table in the center
-- four note blocks around it
+## Current Design Storage
 
-## Planned GUI
+Written discs remain the `blueprint_cd` item. Music and design metadata are stored on the `ItemStack`, while audio files and ownership metadata are stored in the server music index.
 
-The future GUI should feel like a compact DJ / CD writer workstation.
+Custom disc designs use a compact 16x16 pixel format and fall back to the default Blueprint CD design if data is missing or invalid.
 
-Planned controls:
+## Roadmap
 
-- CD slot
-- song name field
-- file selector
-- color picker
-- design selector
-- write button
+Future work may include:
 
-## Planned Disc Designs
+- More polished CD Writer layout and visual feedback.
+- Better custom disc texture tooling.
+- Optional richer design import/export workflows.
+- Improved playback seek/sync for late listeners.
+- Expanded moderation and storage controls for public servers.
+- Optional permission-mod integrations.
 
-The CD Writer should eventually let players choose or upload a disc design.
+## Compatibility Goal
 
-Design rules to evaluate:
-
-- vanilla-style default remains `16x16`
-- custom designs may scale up to `128x128`
-- custom designs should be stored as a design ID or server-managed asset reference, not as raw private client paths
-- server owners should be able to cap custom design size and storage usage
-- designs should use the same ownership and moderation rules as music entries
-- the written disc item remains `blueprint_cd`; it should not become a separate written item
-
-Color behavior:
-
-- the written disc uses the stored hex color as real RGB metadata
-- tinting should preserve brightness so darker tones stay dark and lighter tones stay light
-- invalid or deleted discs may use a red warning visual/state
-
-Future PNG mockups can be added later once the command-based first version is stable.
-
-## Planned Pipeline
-
-Later versions should add:
-
-- client upload flow for integrated and dedicated servers
-- direct client-to-server upload for friends on multiplayer servers, because server commands cannot read files from a player's private computer
-- server-side import validation
-- reuse the command version's FFmpeg normalization pipeline
-- upload progress, cancellation, and server quota errors
-- exact playback seek/sync for late listeners
-- optional richer disc design asset upload up to the configured `128x128` maximum
-
-## Migration Notes
-
-The first version already separates:
-
-- item metadata
-- server-side music index
-- config
-- ownership checks
-- command workflow
-
-That structure is intended to let the future CD Writer GUI call into the same core write and validation services without rewriting the mod.
+MusicXCST should keep one written-disc item type and evolve metadata/rendering around it. That keeps discs simple for inventories, modpacks, and server migration.

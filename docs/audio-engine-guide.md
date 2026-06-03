@@ -1,27 +1,48 @@
 # Audio Engine Guide
 
-musicXCST uses a mod-controlled audio path instead of dynamic Minecraft sound events.
+MusicXCST uses a mod-controlled audio path instead of creating dynamic Minecraft sound events or rebuilding resource packs.
 
-Server responsibilities:
+## Server Responsibilities
 
-- validate import paths and extensions
-- hash original files
-- normalize playable audio into OGG Vorbis
-- store only safe relative paths in metadata
-- stream normalized audio to clients in bounded chunks
-- start and stop playback sessions from jukeboxes or admin commands
+- Validate upload paths, extensions, size, duration, and quotas.
+- Normalize playable audio to OGG Vorbis.
+- Store safe relative paths in the music index.
+- Track ownership and creation timestamps.
+- Send playback metadata, checksums, preview data, and audio chunks to clients.
+- Start and stop jukebox/admin playback sessions.
+- Send live jukebox volume updates to listeners.
 
-Client responsibilities:
+## Client Responsibilities
 
-- receive playback metadata
-- check the local `musicxcst-cache`
-- request missing chunks
-- verify SHA-256 checksums
-- decode OGG with STB Vorbis
-- play stereo or positional OpenAL sources
+- Convert selected CD Writer files to normalized OGG before upload.
+- Receive playback metadata from the server.
+- Check the local `musicxcst-cache` folder.
+- Request missing audio chunks.
+- Verify SHA-256 checksums before full playback.
+- Decode OGG with STB Vorbis.
+- Play audio through OpenAL with positional gain and live volume updates.
 
-Current limitations:
+## Cache Behavior
 
-- playback start time is sent, but exact seek into the middle of long tracks is still a TODO
-- full range enter/leave session tracking is represented by service classes and initial radius sends, but the continuous tracker still needs to be connected
-- fade controller exists as an extension point and needs deeper OpenAL gain integration
+Players can pre-download active tracks:
+
+```text
+/cstmusic download all
+/cstmusic download auto 30m
+/cstmusic download auto 1h
+/cstmusic download auto 1h30m
+/cstmusic download off
+```
+
+The cache is stored in:
+
+```text
+<minecraft directory>/musicxcst-cache/
+```
+
+## Current Limitations
+
+- Cache misses can delay full-track playback while chunks download.
+- Precise mid-track seeking is still an area for improvement.
+- Large public libraries should use server quotas and moderation.
+- Every listener needs the client mod installed because playback uses a custom audio path.

@@ -17,6 +17,7 @@ import java.util.Map;
 
 public final class CustomAudioEngine {
     private static final Map<BlockPos, AudioPlayer.PlayingSound> PLAYING = new HashMap<>();
+    private static final Map<BlockPos, Integer> VOLUME_OVERRIDES = new HashMap<>();
 
     private CustomAudioEngine() {
     }
@@ -42,6 +43,7 @@ public final class CustomAudioEngine {
                     : AudioPlayer.play(payload, audioFile);
             if (sound != null) {
                 PLAYING.put(payload.pos().immutable(), sound);
+                VOLUME_OVERRIDES.put(payload.pos().immutable(), Math.max(0, Math.min(100, payload.volumePercent())));
             }
         } catch (IOException exception) {
             Musicxcst.LOGGER.warn("Failed to decode Blueprint CD audio '{}': {}", payload.displayName(), exception.getMessage());
@@ -55,8 +57,18 @@ public final class CustomAudioEngine {
 
     public static void stop(JukeboxStopPayload payload) {
         AudioPlayer.PlayingSound sound = PLAYING.remove(payload.pos());
+        VOLUME_OVERRIDES.remove(payload.pos());
         if (sound != null) {
             sound.close();
+        }
+    }
+
+    public static void updateVolume(BlockPos pos, int volumePercent) {
+        VOLUME_OVERRIDES.put(pos.immutable(), Math.max(0, Math.min(100, volumePercent)));
+        Minecraft client = Minecraft.getInstance();
+        AudioPlayer.PlayingSound sound = PLAYING.get(pos);
+        if (sound != null) {
+            updateDistanceGain(client, sound);
         }
     }
 
@@ -86,6 +98,7 @@ public final class CustomAudioEngine {
             sound.close();
         }
         PLAYING.clear();
+        VOLUME_OVERRIDES.clear();
     }
 
     private static void updateDistanceGain(Minecraft client, AudioPlayer.PlayingSound sound) {
@@ -117,6 +130,6 @@ public final class CustomAudioEngine {
     }
 
     private static float jukeboxVolume(AudioPlayer.PlayingSound sound) {
-        return sound.volumePercent() / 100.0F;
+        return VOLUME_OVERRIDES.getOrDefault(sound.pos(), sound.volumePercent()) / 100.0F;
     }
 }

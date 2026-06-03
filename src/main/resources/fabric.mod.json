@@ -3,7 +3,7 @@
   "id": "musicxcst",
   "version": "${version}",
   "name": "musicXCST",
-  "description": "Custom writable music CDs for Minecraft 26.1.2 on Fabric.",
+  "description": "Writable custom music discs for Fabric servers, with CD Writer uploads, custom disc artwork, jukebox playback, audio caching, FFmpeg support, and server-side storage controls.",
   "authors": [
     "B1progame"
   ],
