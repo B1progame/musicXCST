@@ -1,8 +1,12 @@
 # MusicXCST
 
+[![Modrinth Downloads](https://img.shields.io/modrinth/dt/musicxcst?logo=modrinth&label=Modrinth%20Downloads)](https://modrinth.com/mod/musicxcst)
+[![CurseForge Downloads](https://cf.way2muchnoise.eu/full_1563663_downloads.svg)](https://www.curseforge.com/minecraft/mc-mods/musicxcst)
+[![GitHub Source](https://img.shields.io/badge/GitHub-Source-181717?logo=github)](https://github.com/B1progame/musicXCST)
+
 MusicXCST is a Fabric mod for Minecraft `26.1.2` that adds writable custom music discs. Players can turn local audio files into Blueprint CDs, customize the disc artwork, and play the finished discs through jukeboxes without rebuilding resource packs or registering a new sound event for every song.
 
-The mod is built for multiplayer servers, modpacks, and creative worlds that want custom music with server-side validation, storage limits, and client-side audio caching.
+The mod is built for singleplayer worlds, LAN worlds, multiplayer servers, modpacks, and creative worlds that want custom music with validation, storage limits, and client-side audio caching.
 
 ## Highlights
 
