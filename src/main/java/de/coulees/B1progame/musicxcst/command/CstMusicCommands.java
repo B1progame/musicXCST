@@ -120,6 +120,9 @@ public final class CstMusicCommands {
                                 .executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants"))
                                 .then(Commands.literal("checkerboard").executes(ctx -> giveDebugDisc(ctx.getSource(), "checkerboard")))
                                 .then(Commands.literal("quadrants").executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants")))
+                                .then(Commands.literal("red").executes(ctx -> giveDebugDisc(ctx.getSource(), "red")))
+                                .then(Commands.literal("green").executes(ctx -> giveDebugDisc(ctx.getSource(), "green")))
+                                .then(Commands.literal("blue").executes(ctx -> giveDebugDisc(ctx.getSource(), "blue")))
                                 .then(Commands.literal("transparent-center").executes(ctx -> giveDebugDisc(ctx.getSource(), "transparent-center")))
                                 .then(Commands.literal("invalid").executes(ctx -> giveDebugDisc(ctx.getSource(), "invalid"))))
                         .then(Commands.literal("reload").executes(ctx -> reload(ctx.getSource())))
@@ -347,6 +350,9 @@ public final class CstMusicCommands {
         ServerPlayer player = source.getPlayerOrException();
         int[] pixels = switch (pattern) {
             case "checkerboard" -> checkerboardDesign();
+            case "red" -> solidDesign(0xFFFF0000);
+            case "green" -> solidDesign(0xFF00FF00);
+            case "blue" -> solidDesign(0xFF0000FF);
             case "transparent-center" -> quadrantsDesign();
             case "invalid" -> quadrantsDesign();
             default -> quadrantsDesign();
@@ -411,6 +417,18 @@ public final class CstMusicCommands {
                     continue;
                 }
                 pixels[y * DiscData.DESIGN_SIZE + x] = ((x + y) & 1) == 0 ? 0xFFFFFFFF : 0xFF111111;
+            }
+        }
+        return pixels;
+    }
+
+    private static int[] solidDesign(int color) {
+        int[] pixels = new int[DiscData.DESIGN_PIXELS];
+        for (int y = 0; y < DiscData.DESIGN_SIZE; y++) {
+            for (int x = 0; x < DiscData.DESIGN_SIZE; x++) {
+                if (discMask(x, y)) {
+                    pixels[y * DiscData.DESIGN_SIZE + x] = color;
+                }
             }
         }
         return pixels;
