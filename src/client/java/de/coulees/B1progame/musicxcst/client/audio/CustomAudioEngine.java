@@ -66,10 +66,15 @@ public final class CustomAudioEngine {
     public static void updateVolume(BlockPos pos, int volumePercent) {
         VOLUME_OVERRIDES.put(pos.immutable(), Math.max(0, Math.min(100, volumePercent)));
         Minecraft client = Minecraft.getInstance();
+        client.getSoundManager().updateCategoryVolume(SoundSource.RECORDS, client.options.getSoundSourceVolume(SoundSource.RECORDS));
         AudioPlayer.PlayingSound sound = PLAYING.get(pos);
         if (sound != null) {
             updateDistanceGain(client, sound);
         }
+    }
+
+    public static float jukeboxVolume(BlockPos pos) {
+        return VOLUME_OVERRIDES.getOrDefault(pos.immutable(), 100) / 100.0F;
     }
 
     public static void tick(Minecraft client) {

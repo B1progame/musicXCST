@@ -89,7 +89,6 @@ public final class BlueprintCdItemRenderer {
             Musicxcst.LOGGER.debug("Blueprint CD renderer found no base item front/back quads for {}", displayContext);
             return;
         }
-        logBaseBoundsOnce(displayContext, frontBounds, backBounds);
         FaceBounds overlayFrontBounds = frontBounds == null ? null : frontBounds.overlayFace();
         FaceBounds overlayBackBounds = backBounds == null ? null : backBounds.overlayFace();
 
@@ -203,18 +202,6 @@ public final class BlueprintCdItemRenderer {
         String key = displayContext.name() + ":" + DiscData.encodeDesignId(data.designPixels);
         if (LOGGED_CONTEXTS.add(key)) {
             Musicxcst.LOGGER.debug("Blueprint CD item-layer renderer received {} design {}", displayContext, DiscData.designDebugSummary(data.designPixels));
-        }
-    }
-
-    private static void logBaseBoundsOnce(ItemDisplayContext displayContext, FaceBounds frontBounds, FaceBounds backBounds) {
-        String key = "base-bounds:" + displayContext.name();
-        if (LOGGED_CONTEXTS.add(key)) {
-            Musicxcst.LOGGER.info("Blueprint CD base bounds {} front={} frontOverlay={} back={} backOverlay={}",
-                    displayContext,
-                    cacheKey(frontBounds),
-                    cacheKey(frontBounds == null ? null : frontBounds.overlayFace()),
-                    cacheKey(backBounds),
-                    cacheKey(backBounds == null ? null : backBounds.overlayFace()));
         }
     }
 

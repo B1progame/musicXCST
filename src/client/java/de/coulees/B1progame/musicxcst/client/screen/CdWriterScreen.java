@@ -35,7 +35,6 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.HashMap;
@@ -122,6 +121,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private ExecutorService editorExecutor;
     private String editorToken;
     private long editorExpiresAtMillis;
+    private String lastInputDesignKey = "";
     private int pressedTextureButton = PRESSED_NONE;
 
     public CdWriterScreen(CdWriterMenu menu, Inventory playerInventory, Component title) {
@@ -166,6 +166,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     @Override
     protected void containerTick() {
         ticks++;
+        syncInputDiscDesign();
         if (editorServer != null && System.currentTimeMillis() > editorExpiresAtMillis) {
             stopEditorServer();
             message("Disc design editor session expired.");
@@ -434,6 +435,39 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         updateDesignIdBox();
     }
 
+    private void syncInputDiscDesign() {
+        ItemStack stack = menu.inputStack();
+        String key = inputDesignKey(stack);
+        if (key.equals(lastInputDesignKey)) {
+            return;
+        }
+        lastInputDesignKey = key;
+
+        DiscData data = DiscData.fromStack(stack);
+        if (data != null) {
+            System.arraycopy(DiscData.sanitizeDesign(data.designPixels), 0, discPixels, 0, discPixels.length);
+            selectedColor = textureColor(data.designPixels);
+            syncCurrentDesign();
+            return;
+        }
+
+        if (!stack.isEmpty()) {
+            resetWorkingDesign();
+            syncCurrentDesign();
+        }
+    }
+
+    private String inputDesignKey(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return "empty";
+        }
+        DiscData data = DiscData.fromStack(stack);
+        if (data == null) {
+            return "blank:" + stack.getItem();
+        }
+        return "disc:" + data.musicId + ":" + data.status + ":" + data.designId;
+    }
+
     private void importDesignId() {
         String designId = designIdBox.getValue().trim();
         DiscData.decodeDesignId(designId).ifPresentOrElse(pixels -> {
@@ -453,16 +487,12 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         Minecraft client = Minecraft.getInstance();
         try {
             message("Opening texture editor...");
-            Path editor = client.gameDirectory.toPath()
-                    .resolve("config")
-                    .resolve(Musicxcst.MOD_ID)
-                    .resolve("editor")
-                    .resolve("disc_texture_editor.html")
-                    .normalize();
-            copyEditorResource(editor);
             int port = startEditorServer(client);
             syncCurrentDesign();
-            String uri = editor.toUri() + "?port=" + port + "&token=" + editorToken + "&design=" + urlEncode(currentDesignId);
+            String uri = "http://127.0.0.1:" + port
+                    + "/editor?port=" + port
+                    + "&token=" + editorToken
+                    + "&design=" + urlEncode(currentDesignId);
             Util.getPlatform().openUri(URI.create(uri));
             message("Texture editor opened.");
         } catch (IOException exception) {
@@ -508,26 +538,13 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         return BUTTON_IDLE_COLOR;
     }
 
-    private void copyEditorResource(Path editor) throws IOException {
-        Files.createDirectories(editor.getParent());
-        copyResource(EDITOR_RESOURCE, editor);
-        copyResource(EDITOR_ICON_RESOURCE, editor.getParent().resolve("icon.png"));
-    }
-
-    private void copyResource(String resource, Path target) throws IOException {
-        try (InputStream stream = CdWriterScreen.class.getResourceAsStream(resource)) {
-            if (stream == null) {
-                throw new IOException("Missing editor resource " + resource);
-            }
-            Files.copy(stream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
     private int startEditorServer(Minecraft client) throws IOException {
         stopEditorServer();
         editorToken = randomToken();
         editorExpiresAtMillis = System.currentTimeMillis() + EDITOR_TIMEOUT_MILLIS;
         editorServer = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 1);
+        editorServer.createContext("/editor", this::handleEditorPage);
+        editorServer.createContext("/icon.png", this::handleEditorIcon);
         editorServer.createContext("/finish", exchange -> handleEditorFinish(client, exchange));
         editorExecutor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "musicxcst-disc-editor-callback");
@@ -537,6 +554,31 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         editorServer.setExecutor(editorExecutor);
         editorServer.start();
         return editorServer.getAddress().getPort();
+    }
+
+    private void handleEditorPage(HttpExchange exchange) throws IOException {
+        try {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendEditorResponse(exchange, 405, "GET required.");
+                return;
+            }
+            Map<String, String> query = parseFormBody(exchange.getRequestURI().getRawQuery() == null ? "" : exchange.getRequestURI().getRawQuery());
+            if (!String.valueOf(editorToken).equals(query.get("token"))) {
+                sendEditorResponse(exchange, 403, "Invalid editor token.");
+                return;
+            }
+            sendEditorResource(exchange, EDITOR_RESOURCE, "text/html; charset=utf-8");
+        } catch (IllegalArgumentException exception) {
+            sendEditorResponse(exchange, 400, exception.getMessage());
+        }
+    }
+
+    private void handleEditorIcon(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            sendEditorResponse(exchange, 405, "GET required.");
+            return;
+        }
+        sendEditorResource(exchange, EDITOR_ICON_RESOURCE, "image/png");
     }
 
     private void handleEditorFinish(Minecraft client, HttpExchange exchange) throws IOException {
@@ -587,6 +629,25 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             throw new IllegalArgumentException("Callback body is too large.");
         }
         return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private void sendEditorResource(HttpExchange exchange, String resource, String contentType) throws IOException {
+        byte[] bytes = readResourceBytes(resource);
+        exchange.getResponseHeaders().set("Content-Type", contentType);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream stream = exchange.getResponseBody()) {
+            stream.write(bytes);
+        }
+    }
+
+    private byte[] readResourceBytes(String resource) throws IOException {
+        try (InputStream stream = CdWriterScreen.class.getResourceAsStream(resource)) {
+            if (stream == null) {
+                throw new IOException("Missing editor resource " + resource);
+            }
+            return stream.readAllBytes();
+        }
     }
 
     private static Map<String, String> parseFormBody(String body) {

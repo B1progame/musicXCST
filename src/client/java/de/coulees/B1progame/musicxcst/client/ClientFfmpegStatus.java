@@ -18,8 +18,9 @@ public final class ClientFfmpegStatus {
         }
         checked = true;
         CstMusicConfig config = ClientFfmpegConfig.load(client);
-        missing = !"disabled".equals(FfmpegLocator.normalizedMode(config))
-                && FFMPEG_LOCATOR.locate(client.gameDirectory.toPath(), config).isEmpty();
+        String mode = FfmpegLocator.normalizedMode(config);
+        missing = !"disabled".equals(mode)
+                && (!config.clientFfmpegSetupAcknowledged || FFMPEG_LOCATOR.locate(client.gameDirectory.toPath(), config).isEmpty());
     }
 
     public static boolean isMissing() {
@@ -28,5 +29,12 @@ public final class ClientFfmpegStatus {
 
     public static void markConfigured() {
         missing = false;
+    }
+
+    public static void markConfigured(Minecraft client) {
+        CstMusicConfig config = ClientFfmpegConfig.load(client);
+        config.clientFfmpegSetupAcknowledged = true;
+        ClientFfmpegConfig.save(client, config);
+        markConfigured();
     }
 }

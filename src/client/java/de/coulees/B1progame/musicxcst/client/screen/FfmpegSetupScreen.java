@@ -1,11 +1,15 @@
 package de.coulees.B1progame.musicxcst.client.screen;
 
+import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.client.ClientFfmpegConfig;
 import de.coulees.B1progame.musicxcst.client.ClientFfmpegStatus;
 import de.coulees.B1progame.musicxcst.client.ClientMusicUploader;
 import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
 import de.coulees.B1progame.musicxcst.media.FfmpegLocator;
 import de.coulees.B1progame.musicxcst.media.ManagedFfmpegProvider;
+import de.coulees.B1progame.musicxcst.network.FfmpegSetupRequestPayload;
+import de.coulees.B1progame.musicxcst.network.FfmpegSetupStatusPayload;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
@@ -23,9 +27,11 @@ import java.util.function.Consumer;
 
 public final class FfmpegSetupScreen extends Screen {
     private static final int PANEL_WIDTH = 420;
-    private static final int PANEL_HEIGHT = 232;
+    private static final int PANEL_HEIGHT = 256;
     private static final int BUTTON_WIDTH = 164;
     private static final int BUTTON_HEIGHT = 20;
+    private static String lastServerStatus = "Choose a setup option.";
+    private static boolean serverInstalling;
 
     private final Screen previous;
     private final String uploadName;
@@ -55,8 +61,12 @@ public final class FfmpegSetupScreen extends Screen {
     protected void init() {
         int left = this.width / 2 - PANEL_WIDTH / 2;
         int top = this.height / 2 - PANEL_HEIGHT / 2;
+        if (serverInstalling || !"Choose a setup option.".equals(lastServerStatus)) {
+            status = lastServerStatus;
+            installing = serverInstalling;
+        }
         this.systemButton = addRenderableWidget(Button.builder(Component.literal("Use system FFmpeg"), button -> useSystem())
-                .bounds(left + 38, top + 146, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(left + 38, top + 170, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         CstMusicConfig config = ClientFfmpegConfig.load(Minecraft.getInstance());
         CstMusicConfig systemConfig = new CstMusicConfig();
@@ -66,16 +76,16 @@ public final class FfmpegSetupScreen extends Screen {
             status = "System FFmpeg was not found on PATH.";
         }
         addRenderableWidget(Button.builder(Component.literal("Choose FFmpeg path"), button -> choosePath())
-                .bounds(left + 218, top + 146, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(left + 218, top + 170, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         addRenderableWidget(Button.builder(Component.literal("Download FFmpeg"), button -> downloadManaged())
-                .bounds(left + 38, top + 172, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(left + 38, top + 196, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         addRenderableWidget(Button.builder(Component.literal("Use OGG only"), button -> disableFfmpeg())
-                .bounds(left + 218, top + 172, BUTTON_WIDTH, BUTTON_HEIGHT)
+                .bounds(left + 218, top + 196, BUTTON_WIDTH, BUTTON_HEIGHT)
                 .build());
         addRenderableWidget(Button.builder(Component.literal("Cancel"), button -> cancel())
-                .bounds(left + 130, top + 202, 160, BUTTON_HEIGHT)
+                .bounds(left + 130, top + 226, 160, BUTTON_HEIGHT)
                 .build());
     }
 
@@ -96,9 +106,16 @@ public final class FfmpegSetupScreen extends Screen {
         textY = drawWrapped(guiGraphics, "MusicXCST does not ship FFmpeg inside the mod jar. FFmpeg is a third-party executable, so setup only happens after you choose an option.", left + 18, textY, PANEL_WIDTH - 36, 0xFFE7ECF5);
         textY = drawWrapped(guiGraphics, "You can use system FFmpeg, choose a local executable, download a verified managed copy, or keep using compatible OGG files.", left + 18, textY + 5, PANEL_WIDTH - 36, 0xFFE7ECF5);
 
-        guiGraphics.fill(left + 18, top + 118, left + PANEL_WIDTH - 18, top + 136, 0xFF202B36);
-        guiGraphics.outline(left + 18, top + 118, PANEL_WIDTH - 36, 18, 0xFF3B5268);
-        drawText(guiGraphics, status, left + 25, top + 123, 0xFFFFE08A);
+        guiGraphics.fill(left + 18, top + 114, left + PANEL_WIDTH - 18, top + 160, 0xFF202B36);
+        guiGraphics.outline(left + 18, top + 114, PANEL_WIDTH - 36, 46, 0xFF3B5268);
+        int statusY = top + 121;
+        for (String line : wrap(status, PANEL_WIDTH - 50)) {
+            drawText(guiGraphics, line, left + 25, statusY, 0xFFFFE08A);
+            statusY += 11;
+            if (statusY > top + 149) {
+                break;
+            }
+        }
     }
 
     private void drawText(GuiGraphicsExtractor guiGraphics, String text, int x, int y, int color) {
@@ -142,7 +159,7 @@ public final class FfmpegSetupScreen extends Screen {
         config.ffmpegMode = "system";
         ClientFfmpegConfig.save(client, config);
         if (locator.locate(client.gameDirectory.toPath(), config).isPresent()) {
-            ClientFfmpegStatus.markConfigured();
+            ClientFfmpegStatus.markConfigured(client);
             retryUpload(client);
         } else {
             status = "System FFmpeg was not found on PATH.";
@@ -165,7 +182,7 @@ public final class FfmpegSetupScreen extends Screen {
                 config.ffmpegPath = selected;
                 ClientFfmpegConfig.save(client, config);
                 if (locator.locate(client.gameDirectory.toPath(), config).isPresent()) {
-                    ClientFfmpegStatus.markConfigured();
+                    ClientFfmpegStatus.markConfigured(client);
                     retryUpload(client);
                 } else {
                     status = "The selected FFmpeg path did not run successfully.";
@@ -193,9 +210,31 @@ public final class FfmpegSetupScreen extends Screen {
         if (installing) {
             return;
         }
-        installing = true;
-        status = "Downloading managed FFmpeg after your explicit request...";
         Minecraft client = Minecraft.getInstance();
+        Musicxcst.LOGGER.info("FFmpeg setup GUI download button clicked. Connected to server: {}", client.getConnection() != null);
+        if (client.getConnection() != null) {
+            if (!ClientPlayNetworking.canSend(FfmpegSetupRequestPayload.TYPE)) {
+                status = "This server cannot receive FFmpeg setup requests. Use /cstmusic admin ffmpeg download confirm.";
+                Musicxcst.LOGGER.warn("FFmpeg setup GUI could not send request because the server has not registered the packet.");
+                return;
+            }
+            installing = true;
+            serverInstalling = true;
+            status = "Requesting server managed FFmpeg setup...";
+            lastServerStatus = status;
+            Musicxcst.LOGGER.info("FFmpeg setup GUI sending server download request packet.");
+            ClientPlayNetworking.send(new FfmpegSetupRequestPayload());
+            return;
+        }
+
+        Musicxcst.LOGGER.info("FFmpeg setup GUI has no server connection; running client-local managed setup only.");
+        downloadManagedClientLocal();
+    }
+
+    private void downloadManagedClientLocal() {
+        installing = true;
+        Minecraft client = Minecraft.getInstance();
+        status = "Preparing client managed FFmpeg download. Waiting for download size...";
         Thread downloader = new Thread(() -> {
             CstMusicConfig config = ClientFfmpegConfig.load(client);
             try {
@@ -209,7 +248,7 @@ public final class FfmpegSetupScreen extends Screen {
                 client.execute(() -> {
                     status = result.versionLine();
                     installing = false;
-                    ClientFfmpegStatus.markConfigured();
+                    ClientFfmpegStatus.markConfigured(client);
                     retryUpload(client);
                 });
             } catch (IllegalArgumentException exception) {
@@ -223,12 +262,28 @@ public final class FfmpegSetupScreen extends Screen {
         downloader.start();
     }
 
+    public static void handleServerStatus(Minecraft client, FfmpegSetupStatusPayload payload) {
+        lastServerStatus = payload.message();
+        serverInstalling = !payload.done();
+        Musicxcst.LOGGER.info("FFmpeg setup GUI received server status: done={}, success={}, message={}", payload.done(), payload.success(), payload.message());
+        if (client.screen instanceof FfmpegSetupScreen screen) {
+            screen.status = payload.message();
+            screen.installing = !payload.done();
+            if (payload.done() && payload.success()) {
+                ClientFfmpegStatus.markConfigured(client);
+                screen.retryUpload(client);
+            }
+        } else if (payload.done() && payload.success()) {
+            ClientFfmpegStatus.markConfigured(client);
+        }
+    }
+
     private void disableFfmpeg() {
         Minecraft client = Minecraft.getInstance();
         CstMusicConfig config = ClientFfmpegConfig.load(client);
         config.ffmpegMode = "disabled";
         ClientFfmpegConfig.save(client, config);
-        ClientFfmpegStatus.markConfigured();
+        ClientFfmpegStatus.markConfigured(client);
         cancel();
     }
 

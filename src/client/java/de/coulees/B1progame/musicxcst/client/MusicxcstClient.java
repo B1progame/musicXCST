@@ -13,6 +13,7 @@ import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
 import de.coulees.B1progame.musicxcst.network.AudioChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadRequestPayload;
 import de.coulees.B1progame.musicxcst.network.CdWriterDonePayload;
+import de.coulees.B1progame.musicxcst.network.FfmpegSetupStatusPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxVolumeUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.MusicLimitConfirmPayload;
@@ -43,6 +44,7 @@ public class MusicxcstClient implements ClientModInitializer {
                 screen.finishConverting(payload.pos());
             }
         }));
+        ClientPlayNetworking.registerGlobalReceiver(FfmpegSetupStatusPayload.TYPE, (payload, context) -> context.client().execute(() -> FfmpegSetupScreen.handleServerStatus(context.client(), payload)));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxStartPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleStart(payload)));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxSettingsOpenPayload.TYPE, (payload, context) -> context.client().execute(() -> context.client().setScreen(new JukeboxSettingsScreen(payload.pos(), payload.looping(), payload.volumePercent()))));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxVolumeUpdatePayload.TYPE, (payload, context) -> context.client().execute(() -> CustomAudioEngine.updateVolume(payload.pos(), payload.volumePercent())));

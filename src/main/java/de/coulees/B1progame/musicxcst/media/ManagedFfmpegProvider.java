@@ -12,6 +12,7 @@ import java.io.Reader;
 import java.io.Writer;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -64,18 +65,18 @@ public final class ManagedFfmpegProvider {
         config.ffmpegManagedLicense = download.license();
 
         try {
-            progress(progress, "Downloading FFmpeg...");
+            progress(progress, "Preparing FFmpeg download from verified source...");
             Path targetRoot = installDirectory(baseDirectory, platform);
             Files.createDirectories(targetRoot);
             Path archive = targetRoot.resolve(download.archiveName()).normalize();
-            downloadArchive(download, archive);
-            progress(progress, "Verifying FFmpeg download...");
+            downloadArchive(download, archive, progress);
+            progress(progress, "Verifying FFmpeg download with SHA-256...");
             verifySha256(archive, download.sha256());
-            progress(progress, "Extracting FFmpeg...");
+            progress(progress, "Extracting FFmpeg executable from verified archive...");
             Path executable = extractZip(download, archive, targetRoot, platform);
             executable.toFile().setReadable(true, true);
             executable.toFile().setExecutable(true, true);
-            progress(progress, "Checking FFmpeg version...");
+            progress(progress, "Running ffmpeg -version and checking license flags...");
             VersionReport report = versionReport(executable);
             if (report.configuration().toLowerCase(Locale.ROOT).contains("--enable-nonfree")) {
                 Files.deleteIfExists(executable);
@@ -132,15 +133,69 @@ public final class ManagedFfmpegProvider {
         return installDirectory(baseDirectory, platform).resolve("metadata.json").normalize();
     }
 
-    private void downloadArchive(ManagedDownload download, Path archive) throws IOException {
+    private void downloadArchive(ManagedDownload download, Path archive, Consumer<String> progress) throws IOException {
         URI uri = URI.create(download.url());
         if (!"https".equalsIgnoreCase(uri.getScheme())) {
             throw new IllegalArgumentException("Managed FFmpeg downloads must use HTTPS.");
         }
         URL url = uri.toURL();
-        try (InputStream input = url.openStream()) {
-            Files.copy(input, archive, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        URLConnection connection = url.openConnection();
+        long totalBytes = Math.max(0L, connection.getContentLengthLong());
+        long startedAtNanos = System.nanoTime();
+        long lastReportNanos = 0L;
+        long downloaded = 0L;
+        byte[] buffer = new byte[64 * 1024];
+        try (InputStream input = connection.getInputStream();
+             OutputStream output = Files.newOutputStream(archive, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING, java.nio.file.StandardOpenOption.WRITE)) {
+            progress(progress, downloadProgressMessage(downloaded, totalBytes, startedAtNanos));
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                output.write(buffer, 0, read);
+                downloaded += read;
+                long now = System.nanoTime();
+                if (now - lastReportNanos >= TimeUnit.MILLISECONDS.toNanos(500L) || downloaded == totalBytes) {
+                    lastReportNanos = now;
+                    progress(progress, downloadProgressMessage(downloaded, totalBytes, startedAtNanos));
+                }
+            }
         }
+    }
+
+    private String downloadProgressMessage(long downloadedBytes, long totalBytes, long startedAtNanos) {
+        double elapsedSeconds = Math.max(0.001D, (System.nanoTime() - startedAtNanos) / 1_000_000_000.0D);
+        double bytesPerSecond = downloadedBytes / elapsedSeconds;
+        if (totalBytes > 0L) {
+            int percent = (int) Math.max(0L, Math.min(100L, downloadedBytes * 100L / totalBytes));
+            long remainingBytes = Math.max(0L, totalBytes - downloadedBytes);
+            long etaSeconds = bytesPerSecond <= 1.0D ? -1L : Math.round(remainingBytes / bytesPerSecond);
+            return "Downloading FFmpeg: " + percent + "% (" + formatBytes(downloadedBytes) + " / " + formatBytes(totalBytes) + ", "
+                    + formatBytes((long) bytesPerSecond) + "/s, ETA " + formatEta(etaSeconds) + ").";
+        }
+        return "Downloading FFmpeg: " + formatBytes(downloadedBytes) + " received (" + formatBytes((long) bytesPerSecond) + "/s, size unknown).";
+    }
+
+    private String formatEta(long seconds) {
+        if (seconds < 0L) {
+            return "unknown";
+        }
+        long minutes = seconds / 60L;
+        long remainingSeconds = seconds % 60L;
+        return minutes > 0L ? minutes + "m " + remainingSeconds + "s" : remainingSeconds + "s";
+    }
+
+    private String formatBytes(long bytes) {
+        if (bytes < 1024L) {
+            return bytes + " B";
+        }
+        double kib = bytes / 1024.0D;
+        if (kib < 1024.0D) {
+            return String.format(Locale.ROOT, "%.1f KiB", kib);
+        }
+        double mib = kib / 1024.0D;
+        if (mib < 1024.0D) {
+            return String.format(Locale.ROOT, "%.1f MiB", mib);
+        }
+        return String.format(Locale.ROOT, "%.1f GiB", mib / 1024.0D);
     }
 
     private void verifySha256(Path archive, String expectedSha256) throws IOException {

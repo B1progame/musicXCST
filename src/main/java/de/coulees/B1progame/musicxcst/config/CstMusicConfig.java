@@ -36,6 +36,7 @@ public final class CstMusicConfig {
     public String ffmpegManagedVersion = "";
     public String ffmpegManagedSha256 = "";
     public String ffmpegManagedLicense = "";
+    public boolean clientFfmpegSetupAcknowledged = false;
     public int playbackRadiusBlocks = 96;
     public int rangeCheckIntervalTicks = 20;
     public int fadeInMilliseconds = 250;

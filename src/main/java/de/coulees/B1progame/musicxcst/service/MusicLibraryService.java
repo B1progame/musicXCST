@@ -23,6 +23,7 @@ import de.coulees.B1progame.musicxcst.network.ClientMusicUploadChunkPayload;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadStartPayload;
 import de.coulees.B1progame.musicxcst.network.CdWriterDonePayload;
 import de.coulees.B1progame.musicxcst.network.CdWriterWritePayload;
+import de.coulees.B1progame.musicxcst.network.FfmpegSetupStatusPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsOpenPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxSettingsUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
@@ -76,6 +77,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 public final class MusicLibraryService {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
@@ -96,20 +99,25 @@ public final class MusicLibraryService {
     private CstMusicConfig config = new CstMusicConfig();
     private Path configPath;
     private Path indexPath;
+    private Path jukeboxSettingsPath;
     private Path importRoot;
     private Path normalizedRoot;
+    private volatile boolean managedFfmpegDownloadRunning;
+    private volatile String managedFfmpegDownloadStatus = "No managed FFmpeg download is running.";
 
     public void onServerStarted(MinecraftServer server) {
         this.server = server;
         initializePaths(server);
         loadConfig();
         loadIndex();
+        loadJukeboxSettings();
         refreshStatuses();
         saveIndex();
         syncAllPlayers();
     }
 
     public void onServerStopping(MinecraftServer server) {
+        saveJukeboxSettings();
         playbackSessions.clear();
         jukeboxLooping.clear();
         jukeboxVolumes.clear();
@@ -151,6 +159,7 @@ public final class MusicLibraryService {
         ensureServer();
         loadConfig();
         loadIndex();
+        loadJukeboxSettings();
         refreshStatuses();
         saveIndex();
         syncAllPlayers();
@@ -201,23 +210,96 @@ public final class MusicLibraryService {
 
     public void downloadManagedFfmpeg(CommandSourceStack source) {
         ensureServer();
-        source.sendSuccess(() -> Component.literal("Starting managed FFmpeg download after explicit admin confirmation. This may take a while."), false);
+        Musicxcst.LOGGER.info("Managed FFmpeg download requested from admin command by '{}'.", source.getTextName());
+        boolean started = startManagedFfmpegDownload(
+                "command:" + source.getTextName(),
+                message -> Musicxcst.LOGGER.info("Managed FFmpeg setup: {}", message),
+                (success, message) -> server.execute(() -> {
+                    if (success) {
+                        source.sendSuccess(() -> Component.literal(message), true);
+                    } else {
+                        source.sendFailure(Component.literal(message));
+                    }
+                })
+        );
+        if (started) {
+            source.sendSuccess(() -> Component.literal("Starting managed FFmpeg download after explicit admin confirmation. This may take a while."), false);
+        } else {
+            source.sendFailure(Component.literal("Managed FFmpeg setup is already running: " + managedFfmpegDownloadStatus));
+        }
+    }
+
+    public void requestManagedFfmpegDownload(ServerPlayer player) {
+        ensureServer();
+        String playerName = player.getName().getString();
+        Musicxcst.LOGGER.info("GUI managed FFmpeg download packet received from '{}'.", playerName);
+        if (!isAdmin(player.createCommandSourceStack())) {
+            Musicxcst.LOGGER.warn("GUI managed FFmpeg download denied for '{}' because they lack admin permission.", playerName);
+            sendFfmpegSetupStatus(player, "Missing permission. Use /cstmusic admin ffmpeg download confirm as an admin.", true, false);
+            return;
+        }
+
+        boolean started = startManagedFfmpegDownload(
+                "gui:" + playerName,
+                message -> server.execute(() -> sendFfmpegSetupStatus(player, message, false, false)),
+                (success, message) -> server.execute(() -> sendFfmpegSetupStatus(player, message, true, success))
+        );
+        if (started) {
+            sendFfmpegSetupStatus(player, "Starting managed FFmpeg download after explicit admin confirmation. This may take a while.", false, false);
+        } else {
+            sendFfmpegSetupStatus(player, "Managed FFmpeg setup is already running: " + managedFfmpegDownloadStatus, false, false);
+        }
+    }
+
+    private boolean startManagedFfmpegDownload(String requester, Consumer<String> progress, BiConsumer<Boolean, String> completion) {
+        synchronized (this) {
+            if (managedFfmpegDownloadRunning) {
+                Musicxcst.LOGGER.info("Managed FFmpeg setup request from '{}' joined existing task: {}", requester, managedFfmpegDownloadStatus);
+                return false;
+            }
+            managedFfmpegDownloadRunning = true;
+            managedFfmpegDownloadStatus = "Starting managed FFmpeg download.";
+        }
+        Musicxcst.LOGGER.info("Shared managed FFmpeg download method called by '{}'.", requester);
         Thread thread = new Thread(() -> {
             try {
                 ManagedFfmpegProvider.ManagedInstallResult result = managedFfmpegProvider.install(
                         server.getServerDirectory(),
                         config,
-                        message -> Musicxcst.LOGGER.info("Managed FFmpeg setup: {}", message)
+                        message -> {
+                            managedFfmpegDownloadStatus = message;
+                            Musicxcst.LOGGER.info("Managed FFmpeg setup: {}", message);
+                            progress.accept(message);
+                        }
                 );
                 config.ffmpegMode = "managed";
                 saveConfig();
-                server.execute(() -> source.sendSuccess(() -> Component.literal("Managed FFmpeg installed: " + result.versionLine()), true));
+                String locatorResult = ffmpegLocator.locate(server.getServerDirectory(), config).orElse("unavailable after install");
+                String successMessage = "Managed FFmpeg installed: " + result.versionLine();
+                managedFfmpegDownloadStatus = successMessage;
+                Musicxcst.LOGGER.info("Managed FFmpeg config saved; locator result after install: {}", locatorResult);
+                completion.accept(true, successMessage);
             } catch (IllegalArgumentException exception) {
-                server.execute(() -> source.sendFailure(Component.literal("Managed FFmpeg setup failed: " + exception.getMessage())));
+                String failureMessage = "Managed FFmpeg setup failed: " + exception.getMessage();
+                managedFfmpegDownloadStatus = failureMessage;
+                Musicxcst.LOGGER.warn("Managed FFmpeg setup failed for '{}': {}", requester, exception.getMessage());
+                completion.accept(false, failureMessage);
+            } finally {
+                managedFfmpegDownloadRunning = false;
             }
         }, "musicxcst-server-managed-ffmpeg-download");
         thread.setDaemon(true);
         thread.start();
+        return true;
+    }
+
+    private void sendFfmpegSetupStatus(ServerPlayer player, String message, boolean done, boolean success) {
+        Musicxcst.LOGGER.info("Sending managed FFmpeg GUI status to '{}': done={}, success={}, message={}", player.getName().getString(), done, success, message);
+        if (ServerPlayNetworking.canSend(player, FfmpegSetupStatusPayload.TYPE)) {
+            ServerPlayNetworking.send(player, new FfmpegSetupStatusPayload(message, done, success));
+        } else {
+            player.sendSystemMessage(Component.literal(message));
+        }
     }
 
     public String createDiscForPlayer(CommandSourceStack source, ServerPlayer player, String requestedName, String requestedColor, String requestedLocation) {
@@ -613,9 +695,9 @@ public final class MusicLibraryService {
         if (!player.level().getBlockState(pos).is(Blocks.JUKEBOX) || player.blockPosition().distSqr(pos) > 64.0D) {
             return;
         }
-
         jukeboxLooping.put(pos, payload.looping());
         jukeboxVolumes.put(pos, clampVolume(payload.volumePercent()));
+        saveJukeboxSettings();
         sendJukeboxVolumeUpdate(player.level(), pos, clampVolume(payload.volumePercent()));
         if (player.level().getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox) {
             startJukeboxPlayback(player.level(), pos, jukebox.getTheItem());
@@ -724,7 +806,11 @@ public final class MusicLibraryService {
     }
 
     public void startJukeboxPlayback(Level level, BlockPos pos, ItemStack stack) {
-        if (!(level instanceof ServerLevel serverLevel) || stack.getItem() != ModItems.BLUEPRINT_CD) {
+        if (!(level instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        if (stack.getItem() != ModItems.BLUEPRINT_CD) {
+            syncVanillaJukeboxControls(serverLevel, pos, stack);
             return;
         }
 
@@ -772,6 +858,21 @@ public final class MusicLibraryService {
         } catch (IllegalArgumentException exception) {
             Musicxcst.LOGGER.warn("Blueprint CD '{}' cannot be played: {}", entry.displayName, exception.getMessage());
             stopJukeboxPlayback(level, pos);
+        }
+    }
+
+    private void syncVanillaJukeboxControls(ServerLevel level, BlockPos pos, ItemStack stack) {
+        playbackSessions.stop(pos);
+        if (stack.isEmpty()) {
+            return;
+        }
+        sendJukeboxVolumeUpdate(level, pos, jukeboxVolume(pos));
+        if (!isJukeboxLooping(pos) || !(level.getBlockEntity(pos) instanceof JukeboxBlockEntity jukebox)) {
+            return;
+        }
+        if (!jukebox.getSongPlayer().isPlaying()) {
+            Musicxcst.LOGGER.debug("Restarting vanilla jukebox song at {} because MusicXCST loop is enabled.", pos);
+            jukebox.tryForcePlaySong();
         }
     }
 
@@ -1204,6 +1305,7 @@ public final class MusicLibraryService {
         Path serverDirectory = server.getServerDirectory();
         this.configPath = serverDirectory.resolve("config").resolve("musicxcst.json");
         this.indexPath = server.getWorldPath(LevelResource.ROOT).resolve("data").resolve("musicxcst").resolve("music-index.json");
+        this.jukeboxSettingsPath = server.getWorldPath(LevelResource.ROOT).resolve("data").resolve("musicxcst").resolve("jukebox-settings.json");
         this.importRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverImportFolder).normalize();
         this.normalizedRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverNormalizedAudioFolder).normalize();
     }
@@ -1295,6 +1397,90 @@ public final class MusicLibraryService {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to save music metadata index " + indexPath, exception);
         }
+    }
+
+    private void loadJukeboxSettings() {
+        jukeboxLooping.clear();
+        jukeboxVolumes.clear();
+        try {
+            Files.createDirectories(jukeboxSettingsPath.getParent());
+            if (Files.notExists(jukeboxSettingsPath)) {
+                saveJukeboxSettings();
+                return;
+            }
+
+            try (Reader reader = Files.newBufferedReader(jukeboxSettingsPath, StandardCharsets.UTF_8)) {
+                JukeboxSettingsFile file = GSON.fromJson(reader, JukeboxSettingsFile.class);
+                if (file == null || file.settings == null) {
+                    return;
+                }
+                for (SavedJukeboxSetting setting : file.settings) {
+                    if (setting == null || setting.pos == null || setting.pos.isBlank()) {
+                        continue;
+                    }
+                    BlockPos pos = parseBlockPos(setting.pos);
+                    if (pos == null) {
+                        continue;
+                    }
+                    if (setting.looping) {
+                        jukeboxLooping.put(pos, true);
+                    }
+                    int volume = clampVolume(setting.volumePercent);
+                    if (volume != 100) {
+                        jukeboxVolumes.put(pos, volume);
+                    }
+                }
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to load jukebox settings " + jukeboxSettingsPath, exception);
+        }
+    }
+
+    private void saveJukeboxSettings() {
+        if (jukeboxSettingsPath == null) {
+            return;
+        }
+
+        try {
+            Files.createDirectories(jukeboxSettingsPath.getParent());
+            JukeboxSettingsFile file = new JukeboxSettingsFile();
+            Map<BlockPos, SavedJukeboxSetting> byPos = new LinkedHashMap<>();
+
+            for (Map.Entry<BlockPos, Boolean> entry : jukeboxLooping.entrySet()) {
+                if (Boolean.TRUE.equals(entry.getValue())) {
+                    byPos.computeIfAbsent(entry.getKey().immutable(), SavedJukeboxSetting::new).looping = true;
+                }
+            }
+            for (Map.Entry<BlockPos, Integer> entry : jukeboxVolumes.entrySet()) {
+                int volume = clampVolume(entry.getValue());
+                if (volume != 100) {
+                    byPos.computeIfAbsent(entry.getKey().immutable(), SavedJukeboxSetting::new).volumePercent = volume;
+                }
+            }
+
+            file.settings = new ArrayList<>(byPos.values());
+            try (Writer writer = Files.newBufferedWriter(jukeboxSettingsPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(file, writer);
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to save jukebox settings " + jukeboxSettingsPath, exception);
+        }
+    }
+
+    private static BlockPos parseBlockPos(String value) {
+        String[] parts = value.split(",");
+        if (parts.length != 3) {
+            return null;
+        }
+        try {
+            return new BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private static String formatBlockPos(BlockPos pos) {
+        return pos.getX() + "," + pos.getY() + "," + pos.getZ();
     }
 
     private void refreshStatuses() {
@@ -1818,6 +2004,23 @@ public final class MusicLibraryService {
     private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
         private PendingClientUpload withReceivedBytes(long receivedBytes) {
             return new PendingClientUpload(uploadId, ownerUuid, displayName, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
+        }
+    }
+
+    private static final class JukeboxSettingsFile {
+        List<SavedJukeboxSetting> settings = new ArrayList<>();
+    }
+
+    private static final class SavedJukeboxSetting {
+        String pos;
+        boolean looping;
+        int volumePercent = 100;
+
+        private SavedJukeboxSetting() {
+        }
+
+        private SavedJukeboxSetting(BlockPos pos) {
+            this.pos = formatBlockPos(pos);
         }
     }
 }

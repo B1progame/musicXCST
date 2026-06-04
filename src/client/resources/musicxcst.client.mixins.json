@@ -7,6 +7,7 @@
     "ItemModelResolverMixin",
     "ItemStackLayerRenderStateAccessor",
     "ItemStackRenderStateAccessor",
+    "SoundEngineVolumeMixin",
     "SoundManagerMixin",
     "TitleScreenFfmpegNoticeMixin"
   ],
