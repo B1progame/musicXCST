@@ -88,7 +88,7 @@ public final class DiscData {
         tag.putString("ownerName", data.ownerName);
         tag.putString("hexColor", data.hexColor);
         int[] sanitizedDesign = sanitizeDesign(data.designPixels);
-        Musicxcst.LOGGER.info("DiscData.writeToStack design {}", designDebugSummary(sanitizedDesign));
+        Musicxcst.LOGGER.debug("DiscData.writeToStack design {}", designDebugSummary(sanitizedDesign));
         tag.putString("designId", encodeDesignId(sanitizedDesign));
         tag.putIntArray("designPixels", sanitizedDesign);
         tag.putString("status", data.status);

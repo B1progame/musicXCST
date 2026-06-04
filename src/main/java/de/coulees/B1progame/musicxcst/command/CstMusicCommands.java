@@ -7,9 +7,11 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.data.DiscData;
 import de.coulees.B1progame.musicxcst.data.MusicEntry;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
 import de.coulees.B1progame.musicxcst.data.StorageStats;
+import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.network.ClientMusicUploadRequestPayload;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.commands.CommandBuildContext;
@@ -23,9 +25,11 @@ import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.server.permissions.LevelBasedPermissionSet;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public final class CstMusicCommands {
@@ -112,6 +116,12 @@ public final class CstMusicCommands {
                                 .then(Commands.argument("musicId", StringArgumentType.word())
                                         .suggests(CstMusicCommands::suggestAllMusicIds)
                                         .executes(ctx -> adminPlay(ctx.getSource(), StringArgumentType.getString(ctx, "musicId")))))
+                        .then(Commands.literal("debugdisc")
+                                .executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants"))
+                                .then(Commands.literal("checkerboard").executes(ctx -> giveDebugDisc(ctx.getSource(), "checkerboard")))
+                                .then(Commands.literal("quadrants").executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants")))
+                                .then(Commands.literal("transparent-center").executes(ctx -> giveDebugDisc(ctx.getSource(), "transparent-center")))
+                                .then(Commands.literal("invalid").executes(ctx -> giveDebugDisc(ctx.getSource(), "invalid"))))
                         .then(Commands.literal("reload").executes(ctx -> reload(ctx.getSource())))
                         .then(Commands.literal("repairindex").executes(ctx -> repairIndex(ctx.getSource())))));
     }
@@ -144,6 +154,7 @@ public final class CstMusicCommands {
             sendCommandHelp(source, "/cstmusic admin info <musicId>", "Inspect any music entry.");
             sendCommandHelp(source, "/cstmusic admin delete <musicId>", "Delete any music entry.");
             sendCommandHelp(source, "/cstmusic admin play <musicId>", "Play any active entry for yourself.");
+            sendCommandHelp(source, "/cstmusic admin debugdisc quadrants", "Create a render-test Blueprint CD with stored design pixels.");
             sendCommandHelp(source, "/cstmusic admin reload", "Reload config and music index.");
             sendCommandHelp(source, "/cstmusic admin repairindex", "Repair the music index from stored files.");
         }
@@ -330,6 +341,86 @@ public final class CstMusicCommands {
         String result = Musicxcst.LIBRARY.playEntryForAdmin(source, player, musicId);
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
+    }
+
+    private static int giveDebugDisc(CommandSourceStack source, String pattern) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        int[] pixels = switch (pattern) {
+            case "checkerboard" -> checkerboardDesign();
+            case "transparent-center" -> quadrantsDesign();
+            case "invalid" -> quadrantsDesign();
+            default -> quadrantsDesign();
+        };
+        verifyDiscDesignRoundTrip(pixels);
+
+        DiscData data = new DiscData();
+        data.musicId = "debug-" + UUID.randomUUID().toString().replace("-", "");
+        data.displayName = "Debug " + pattern + " Blueprint CD";
+        data.ownerUuid = player.getUUID().toString();
+        data.ownerName = player.getName().getString();
+        data.hexColor = pattern.equals("invalid") ? "#C93A3A" : "#00AAFF";
+        data.designPixels = DiscData.sanitizeDesign(pixels);
+        data.designId = DiscData.encodeDesignId(data.designPixels);
+        data.status = pattern.equals("invalid") ? MusicStatus.INVALID : MusicStatus.ACTIVE;
+        data.schemaVersion = Musicxcst.DISC_SCHEMA_VERSION;
+
+        ItemStack stack = new ItemStack(ModItems.BLUEPRINT_CD);
+        DiscData.writeToStack(stack, data);
+        DiscData readBack = DiscData.fromStack(stack);
+        if (readBack == null || !data.designId.equals(readBack.designId)) {
+            throw new IllegalStateException("Debug disc stack write/read lost design pixels.");
+        }
+
+        if (!player.getInventory().add(stack)) {
+            player.drop(stack, false);
+        }
+        source.sendSuccess(() -> Component.literal("Created debug Blueprint CD " + pattern + " with " + DiscData.designDebugSummary(data.designPixels)), false);
+        return 1;
+    }
+
+    private static void verifyDiscDesignRoundTrip(int[] pixels) {
+        int[] sanitized = DiscData.sanitizeDesign(pixels);
+        String designId = DiscData.encodeDesignId(sanitized);
+        int[] decoded = DiscData.decodeDesignId(designId)
+                .orElseThrow(() -> new IllegalStateException("Debug disc design ID failed to decode."));
+        for (int index = 0; index < sanitized.length; index++) {
+            if (sanitized[index] != decoded[index]) {
+                throw new IllegalStateException("Debug disc design round-trip mismatch at pixel " + index + ".");
+            }
+        }
+    }
+
+    private static int[] quadrantsDesign() {
+        int[] pixels = new int[DiscData.DESIGN_PIXELS];
+        for (int y = 0; y < DiscData.DESIGN_SIZE; y++) {
+            for (int x = 0; x < DiscData.DESIGN_SIZE; x++) {
+                int color = y < 8
+                        ? (x < 8 ? 0xFFFF0000 : 0xFF00FF00)
+                        : (x < 8 ? 0xFF0000FF : 0xFFFFFF00);
+                pixels[y * DiscData.DESIGN_SIZE + x] = discMask(x, y) ? color : 0;
+            }
+        }
+        return pixels;
+    }
+
+    private static int[] checkerboardDesign() {
+        int[] pixels = new int[DiscData.DESIGN_PIXELS];
+        for (int y = 0; y < DiscData.DESIGN_SIZE; y++) {
+            for (int x = 0; x < DiscData.DESIGN_SIZE; x++) {
+                if (!discMask(x, y)) {
+                    continue;
+                }
+                pixels[y * DiscData.DESIGN_SIZE + x] = ((x + y) & 1) == 0 ? 0xFFFFFFFF : 0xFF111111;
+            }
+        }
+        return pixels;
+    }
+
+    private static boolean discMask(int x, int y) {
+        float dx = x + 0.5F - 8.0F;
+        float dy = y + 0.5F - 8.0F;
+        float distanceSquared = dx * dx + dy * dy;
+        return distanceSquared <= 58.0F && distanceSquared >= 4.0F;
     }
 
     private static boolean isAdmin(CommandSourceStack source) {

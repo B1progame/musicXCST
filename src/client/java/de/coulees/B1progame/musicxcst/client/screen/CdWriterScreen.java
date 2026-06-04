@@ -304,7 +304,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         progressText = "Starting upload...";
         Minecraft client = Minecraft.getInstance();
         int[] payloadDesign = designForWrite();
-        Musicxcst.LOGGER.info("CD Writer client sending design {}", DiscData.designDebugSummary(payloadDesign));
+        Musicxcst.LOGGER.debug("CD Writer client sending design {}", DiscData.designDebugSummary(payloadDesign));
         int started = ClientMusicUploader.startUpload(client, name, path, uploadedFileName ->
                 ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileName, payloadDesign)), progress -> this.progressText = progress);
         if (started == 0) {
@@ -444,7 +444,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             System.arraycopy(pixels, 0, discPixels, 0, discPixels.length);
             selectedColor = textureColor(pixels);
             syncCurrentDesign();
-            Musicxcst.LOGGER.info("CD Writer manual import design {}", DiscData.designDebugSummary(discPixels));
+            Musicxcst.LOGGER.debug("CD Writer manual import design {}", DiscData.designDebugSummary(discPixels));
             message("Imported disc design.");
         }, () -> message("Invalid disc design ID."));
     }
@@ -570,7 +570,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
                 System.arraycopy(pixels, 0, discPixels, 0, discPixels.length);
                 selectedColor = textureColor(pixels);
                 syncCurrentDesign();
-                Musicxcst.LOGGER.info("CD Writer HTML import design {}", DiscData.designDebugSummary(discPixels));
+                Musicxcst.LOGGER.debug("CD Writer HTML import design {}", DiscData.designDebugSummary(discPixels));
                 message("Design imported into Minecraft.");
                 stopEditorServer();
             });

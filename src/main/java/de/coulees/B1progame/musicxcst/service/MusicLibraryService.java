@@ -240,7 +240,7 @@ public final class MusicLibraryService {
         if (!skipPlayerFileLimit) {
             enforcePlayerFileLimitOrThrow(player);
         }
-        Musicxcst.LOGGER.info("CD Writer server creating disc with design {}", DiscData.designDebugSummary(designPixels));
+        Musicxcst.LOGGER.debug("CD Writer server creating disc with design {}", DiscData.designDebugSummary(designPixels));
         String displayName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
@@ -310,13 +310,13 @@ public final class MusicLibraryService {
         if (selected.getCount() == 1) {
             DiscData.writeToStack(selected, data);
             DiscData writtenData = DiscData.fromStack(selected);
-            Musicxcst.LOGGER.info("CD Writer server selected stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
+            Musicxcst.LOGGER.debug("CD Writer server selected stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
         } else {
             selected.shrink(1);
             ItemStack written = new ItemStack(ModItems.BLUEPRINT_CD);
             DiscData.writeToStack(written, data);
             DiscData writtenData = DiscData.fromStack(written);
-            Musicxcst.LOGGER.info("CD Writer server new stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
+            Musicxcst.LOGGER.debug("CD Writer server new stack after write {}", writtenData == null ? "missing disc data" : DiscData.designDebugSummary(writtenData.designPixels));
             if (!player.getInventory().add(written)) {
                 player.drop(written, false);
             }
@@ -502,13 +502,13 @@ public final class MusicLibraryService {
             if (!skipPlayerFileLimit && !preparePlayerFileLimitForCdWriter(player, payload)) {
                 return;
             }
-            Musicxcst.LOGGER.info("CD Writer server received payload design {}", DiscData.designDebugSummary(payload.designPixels()));
+            Musicxcst.LOGGER.debug("CD Writer server received payload design {}", DiscData.designDebugSummary(payload.designPixels()));
             blockEntity.setConverting(true);
             menu.setConverting(true);
             String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designPixels(), menu.inputStack(), menu::inputChanged, true);
             menu.moveInputToOutput();
             DiscData outputData = DiscData.fromStack(menu.getSlot(CdWriterMenu.OUTPUT_SLOT).getItem());
-            Musicxcst.LOGGER.info("CD Writer server output slot after move {}", outputData == null ? "missing disc data" : DiscData.designDebugSummary(outputData.designPixels));
+            Musicxcst.LOGGER.debug("CD Writer server output slot after move {}", outputData == null ? "missing disc data" : DiscData.designDebugSummary(outputData.designPixels));
             player.sendSystemMessage(Component.literal(result));
         } catch (IllegalArgumentException exception) {
             player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));

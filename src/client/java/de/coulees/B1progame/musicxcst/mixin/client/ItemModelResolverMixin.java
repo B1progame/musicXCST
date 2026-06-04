@@ -1,6 +1,6 @@
 package de.coulees.B1progame.musicxcst.mixin.client;
 
-import de.coulees.B1progame.musicxcst.client.render.CustomDiscRenderCache;
+import de.coulees.B1progame.musicxcst.client.render.BlueprintCdItemRenderer;
 import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.world.entity.ItemOwner;
@@ -16,6 +16,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ItemModelResolverMixin {
     @Inject(method = "appendItemLayers", at = @At("RETURN"))
     private void musicxcst$appendCustomDiscLayer(ItemStackRenderState renderState, ItemStack stack, ItemDisplayContext displayContext, Level level, ItemOwner owner, int seed, CallbackInfo ci) {
-        CustomDiscRenderCache.appendCustomDiscLayer(renderState, stack, displayContext);
+        BlueprintCdItemRenderer.appendDesignLayer(renderState, stack, displayContext);
     }
 }

@@ -2,7 +2,6 @@ package de.coulees.B1progame.musicxcst.client;
 
 import de.coulees.B1progame.musicxcst.client.audio.ClientAudioDownloadManager;
 import de.coulees.B1progame.musicxcst.client.audio.CustomAudioEngine;
-import de.coulees.B1progame.musicxcst.client.render.CustomDiscItemDecoration;
 import de.coulees.B1progame.musicxcst.client.render.CdWriterBlockRenderer;
 import de.coulees.B1progame.musicxcst.client.screen.CdWriterScreen;
 import de.coulees.B1progame.musicxcst.client.screen.JukeboxSettingsScreen;
@@ -33,7 +32,6 @@ public class MusicxcstClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ClientMusicUploader.register();
-        CustomDiscItemDecoration.register();
         BlockEntityRenderers.register(ModBlockEntities.CD_WRITER, CdWriterBlockRenderer::new);
         MenuScreens.register(ModMenuTypes.CD_WRITER, CdWriterScreen::new);
         ClientPlayNetworking.registerGlobalReceiver(ClientMusicUploadRequestPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientMusicUploader.startUpload(context.client(), payload.name(), payload.path())));
