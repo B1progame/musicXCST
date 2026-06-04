@@ -3,7 +3,7 @@
   "id": "musicxcst",
   "version": "${version}",
   "name": "musicXCST",
-  "description": "Writable custom music discs for Fabric servers, with CD Writer uploads, custom disc artwork, jukebox playback, audio caching, FFmpeg support, and server-side storage controls.",
+  "description": "Writable custom music discs for Fabric worlds, with CD Writer uploads, custom disc artwork, jukebox playback, audio caching, FFmpeg support, and storage controls.",
   "authors": [
     "B1progame"
   ],

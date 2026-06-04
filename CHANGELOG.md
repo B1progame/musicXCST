@@ -1,37 +1,25 @@
 # Changelog
 
-## 0.1.1b
+## 0.1.2
 
-Patch release for Minecraft `26.1.2` on Fabric.
+Release for Minecraft `26.1.2` on Fabric.
 
-### Changed
-
-- The client FFmpeg title-screen notice now respects a working configured `path` or `system` FFmpeg setup.
-- The setup screen disables **Use system FFmpeg** when no PATH FFmpeg is detected.
+- Removed bundled FFmpeg executables from the mod jar.
+- Added explicit FFmpeg setup options: system, path, managed download, or OGG-only mode.
+- Added a title-screen FFmpeg setup notice and server admin FFmpeg commands.
+- Added release jar checks to prevent native executable binaries from being packaged.
+- Fixed FFmpeg setup prompts so valid system/path configs stop asking.
 
 ## 0.1.1
 
 Release for Minecraft `26.1.2` on Fabric.
 
-### Security / Distribution
-
-- Removed bundled FFmpeg executables from the public release jar.
-- Added system/path/managed/disabled FFmpeg modes with old `bundled` configs migrated to `system`.
-- Added explicit client/admin FFmpeg setup flows and release jar checks that fail on bundled native executables.
-
-### Fixed
-
-- Fixed the advanced disc texture editor workflow so custom disc designs render correctly on written Blueprint CDs.
-
-### Changed
-
-- Bumped the mod version to `0.1.1`.
+- Added the advanced custom disc texture editor workflow.
+- Fixed custom disc designs so they render correctly on written Blueprint CDs.
 
 ## 0.1.0
 
 Initial public development release for Minecraft `26.1.2` on Fabric.
-
-### Added
 
 - Writable Blueprint CDs.
 - CD Writer block and GUI.
@@ -44,9 +32,3 @@ Initial public development release for Minecraft `26.1.2` on Fabric.
 - Admin commands for importing, inspecting, deleting, playing, reloading, and repairing entries.
 - Configurable upload, storage, duration, and per-player file limits.
 - Optional system/path FFmpeg support.
-
-### Notes
-
-- MusicXCST requires the mod on both client and server.
-- FFmpeg binaries are not included in the public mod jar; use system/path setup or explicit managed setup where supported.
-- Users and server operators are responsible for uploaded audio rights.
