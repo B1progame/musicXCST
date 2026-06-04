@@ -13,13 +13,11 @@ import java.util.concurrent.TimeUnit;
 public final class FfmpegLocator {
     private static final Duration PROBE_TIMEOUT = Duration.ofSeconds(10);
 
-    private final BundledFfmpegProvider bundledProvider = new BundledFfmpegProvider();
     private final SystemFfmpegProvider systemProvider = new SystemFfmpegProvider();
+    private final ManagedFfmpegProvider managedProvider = new ManagedFfmpegProvider();
 
     public Optional<String> locate(Path baseDirectory, CstMusicConfig config) {
-        String mode = config.ffmpegMode == null || config.ffmpegMode.isBlank()
-                ? "bundled"
-                : config.ffmpegMode.toLowerCase(Locale.ROOT);
+        String mode = normalizedMode(config);
 
         if ("disabled".equals(mode)) {
             return Optional.empty();
@@ -30,34 +28,32 @@ public final class FfmpegLocator {
         if ("system".equals(mode)) {
             return systemProvider.resolve().filter(this::isAvailable);
         }
-        if ("bundled".equals(mode)) {
-            Optional<String> bundled = bundled(baseDirectory).filter(this::isAvailable);
-            if (bundled.isPresent()) {
-                return bundled;
-            }
-            return systemProvider.resolve().filter(this::isAvailable);
+        if ("managed".equals(mode)) {
+            return managedProvider.resolveInstalled(baseDirectory).filter(this::isAvailable);
         }
 
-        Optional<String> bundled = bundled(baseDirectory).filter(this::isAvailable);
-        return bundled.isPresent() ? bundled : systemProvider.resolve().filter(this::isAvailable);
+        return systemProvider.resolve().filter(this::isAvailable);
     }
 
     public String require(Path baseDirectory, CstMusicConfig config) {
         return locate(baseDirectory, config)
-                .orElseThrow(() -> new IllegalArgumentException("FFmpeg is unavailable. Bundle it under " + BundledFfmpegProvider.supportedResourcePaths() + ", configure ffmpegPath, use system ffmpeg, or upload an already-normalized .ogg."));
+                .orElseThrow(() -> new IllegalArgumentException("FFmpeg is unavailable. Install FFmpeg on PATH, set ffmpegMode=path with ffmpegPath, use managed setup after explicit consent, or use an already-compatible .ogg file when conversion is not needed."));
+    }
+
+    public static String normalizedMode(CstMusicConfig config) {
+        String mode = config.ffmpegMode == null || config.ffmpegMode.isBlank()
+                ? "system"
+                : config.ffmpegMode.toLowerCase(Locale.ROOT).trim();
+        return switch (mode) {
+            case "disabled", "path", "system", "managed" -> mode;
+            case "bundled" -> "system";
+            default -> "system";
+        };
     }
 
     private Optional<String> configuredPath(CstMusicConfig config) {
         String configured = config.ffmpegPath == null ? "" : config.ffmpegPath.trim();
         return configured.isBlank() ? Optional.empty() : Optional.of(configured);
-    }
-
-    private Optional<String> bundled(Path baseDirectory) {
-        try {
-            return bundledProvider.resolve(baseDirectory).map(Path::toString);
-        } catch (IOException ignored) {
-            return Optional.empty();
-        }
     }
 
     public boolean isAvailable(String executable) {

@@ -1,36 +1,41 @@
 # FFmpeg License Files
 
-If you bundle FFmpeg binaries with MusicXCST, put the matching FFmpeg license notices and build information in this folder.
+MusicXCST public release jars do not bundle FFmpeg binaries.
 
-Recommended bundled binary:
+Use this folder for research notes and license references for separately installed or managed FFmpeg builds. Do not put executable binaries, native libraries, archives, compressed blobs, or renamed payloads here.
 
-- Use a stable FFmpeg release build, not a random nightly, unless you need a specific fix.
+Recommended FFmpeg selection:
+
 - Prefer an LGPL build for redistribution.
 - Do not use builds configured with `--enable-nonfree`.
-- Avoid GPL builds for the mod jar unless you intentionally want to handle GPL distribution obligations.
+- Avoid GPL builds unless you intentionally want to handle GPL distribution obligations.
 - For current releases, FFmpeg 8.x is fine; MusicXCST only needs the `ffmpeg` executable with OGG Vorbis encode support.
 
-Current bundled binary sources:
+Managed setup:
 
-- Windows x86_64: GyanD FFmpeg `8.1.1` essentials build, `bin/ffmpeg.exe`
-- Linux x86_64: BtbN FFmpeg Linux x86_64 LGPL build, `bin/ffmpeg`
+- Downloads only after explicit user/admin consent.
+- Uses HTTPS.
+- Verifies SHA-256 before extraction.
+- Extracts only expected files.
+- Rejects `--enable-nonfree` when reported by `ffmpeg -version`.
+- Stores metadata under `config/musicxcst/ffmpeg/managed/<platform>/metadata.json`.
 
-Expected binary resource locations:
+Current managed source:
 
-- `native/ffmpeg/windows-x86_64/ffmpeg.exe`
-- `native/ffmpeg/linux-x86_64/ffmpeg`
-- `native/ffmpeg/linux-aarch64/ffmpeg`
-- `native/ffmpeg/macos-x86_64/ffmpeg`
-- `native/ffmpeg/macos-aarch64/ffmpeg`
+- Windows x86_64: BtbN FFmpeg `n8.1` LGPL build, `ffmpeg-n8.1-latest-win64-lgpl-8.1.zip`
+- SHA-256: `8d68576f84043b3e2027ed020de9f814e39795007c64061bf40310e0d3f7fee6`
 
-At runtime the selected binary is extracted to `config/musicxcst/native/ffmpeg/`.
+For unsupported managed platforms, install FFmpeg manually and use:
 
-When adding binaries, also add:
+```text
+ffmpegMode = system
+```
 
-- the FFmpeg version
-- the download/source URL
-- the license file from that build
-- configure flags if the provider publishes them
-- checksums if available
+or:
+
+```text
+ffmpegMode = path
+ffmpegPath = /path/to/ffmpeg
+```
 
 Do not add copyrighted music files to this repository.

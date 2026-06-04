@@ -9,7 +9,7 @@ The MusicXCST source code, artwork, models, sounds, and other original project f
 
 Unofficial modified builds may not be distributed without written permission.
 
-Bundled third-party executables, including FFmpeg binaries, are not owned by the MusicXCST copyright holder. They are distributed under their own upstream licenses and notices. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/` for details.
+MusicXCST public release jars do not bundle FFmpeg executables. Separately installed or managed FFmpeg binaries are third-party executables and are not owned by the MusicXCST copyright holder. They are distributed under their own upstream licenses and notices. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/` for details.
 
 MusicXCST invokes FFmpeg as a separate executable process. FFmpeg is not linked into the MusicXCST code.
 

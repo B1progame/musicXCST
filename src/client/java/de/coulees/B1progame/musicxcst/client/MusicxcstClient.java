@@ -4,6 +4,7 @@ import de.coulees.B1progame.musicxcst.client.audio.ClientAudioDownloadManager;
 import de.coulees.B1progame.musicxcst.client.audio.CustomAudioEngine;
 import de.coulees.B1progame.musicxcst.client.render.CdWriterBlockRenderer;
 import de.coulees.B1progame.musicxcst.client.screen.CdWriterScreen;
+import de.coulees.B1progame.musicxcst.client.screen.FfmpegSetupScreen;
 import de.coulees.B1progame.musicxcst.client.screen.JukeboxSettingsScreen;
 import de.coulees.B1progame.musicxcst.init.ModBlockEntities;
 import de.coulees.B1progame.musicxcst.init.ModMenuTypes;
@@ -20,6 +21,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderers;
@@ -28,6 +30,7 @@ import de.coulees.B1progame.musicxcst.network.JukeboxStartPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 
 public class MusicxcstClient implements ClientModInitializer {
+    private boolean checkedStartupFfmpeg;
 
     @Override
     public void onInitializeClient() {
@@ -55,9 +58,18 @@ public class MusicxcstClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(AudioChunkPayload.TYPE, (payload, context) -> context.client().execute(() -> ClientAudioDownloadManager.handleChunk(payload)));
         ClientPlayNetworking.registerGlobalReceiver(JukeboxStopPayload.TYPE, (payload, context) -> context.client().execute(() -> CustomAudioEngine.stop(payload)));
         ClientTickEvents.END_CLIENT_TICK.register(CustomAudioEngine::tick);
+        ClientTickEvents.END_CLIENT_TICK.register(this::maybeOpenStartupFfmpegSetup);
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             ClientAudioDownloadManager.clear();
             CustomAudioEngine.stopAll();
         });
+    }
+
+    private void maybeOpenStartupFfmpegSetup(Minecraft client) {
+        if (checkedStartupFfmpeg || client.screen == null || client.screen instanceof FfmpegSetupScreen) {
+            return;
+        }
+        checkedStartupFfmpeg = true;
+        ClientFfmpegStatus.checkOnce(client);
     }
 }

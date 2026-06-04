@@ -9,10 +9,12 @@ If conversion or duration probing fails, make sure the relevant side has FFmpeg:
 
 Options:
 
-- ship a compatible bundled FFmpeg binary
 - set `ffmpegMode = system` and install FFmpeg on PATH
 - set `ffmpegMode = path` and configure `ffmpegPath`
+- use the client setup screen or `/cstmusic admin ffmpeg download confirm` where managed download is supported
 - upload already-normalized `.ogg` where possible
+
+MusicXCST public release jars do not include FFmpeg executables. The mod does not silently download FFmpeg.
 
 Install examples:
 

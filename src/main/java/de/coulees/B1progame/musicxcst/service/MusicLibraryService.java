@@ -13,6 +13,7 @@ import de.coulees.B1progame.musicxcst.block.entity.CdWriterBlockEntity;
 import de.coulees.B1progame.musicxcst.init.ModItems;
 import de.coulees.B1progame.musicxcst.menu.CdWriterMenu;
 import de.coulees.B1progame.musicxcst.media.FfmpegLocator;
+import de.coulees.B1progame.musicxcst.media.ManagedFfmpegProvider;
 import de.coulees.B1progame.musicxcst.media.MediaTranscoder;
 import de.coulees.B1progame.musicxcst.network.AudioCacheWarmPayload;
 import de.coulees.B1progame.musicxcst.network.AudioCachePrunePayload;
@@ -89,6 +90,7 @@ public final class MusicLibraryService {
     private final Map<String, PendingClientUpload> pendingClientUploads = new LinkedHashMap<>();
     private final Map<UUID, PendingLimitConfirmation> pendingLimitConfirmations = new LinkedHashMap<>();
     private final FfmpegLocator ffmpegLocator = new FfmpegLocator();
+    private final ManagedFfmpegProvider managedFfmpegProvider = new ManagedFfmpegProvider();
     private final MediaTranscoder mediaTranscoder = new MediaTranscoder();
     private MinecraftServer server;
     private CstMusicConfig config = new CstMusicConfig();
@@ -161,6 +163,61 @@ public final class MusicLibraryService {
         saveIndex();
         syncAllPlayers();
         return "musicXCST metadata index repaired. Entries: " + entries.size();
+    }
+
+    public String ffmpegStatus() {
+        ensureServer();
+        return managedFfmpegProvider.status(server.getServerDirectory(), config, ffmpegLocator);
+    }
+
+    public String setFfmpegPath(String path) {
+        ensureServer();
+        String cleanedPath = stripWrappingQuotes(path == null ? "" : path.trim());
+        if (cleanedPath.isBlank()) {
+            throw new IllegalArgumentException("FFmpeg path cannot be blank.");
+        }
+        config.ffmpegMode = "path";
+        config.ffmpegPath = cleanedPath;
+        saveConfig();
+        return ffmpegLocator.locate(server.getServerDirectory(), config).isPresent()
+                ? "FFmpeg path saved and verified."
+                : "FFmpeg path saved, but it could not be verified yet.";
+    }
+
+    public String resetManagedFfmpeg() {
+        ensureServer();
+        managedFfmpegProvider.reset(server.getServerDirectory());
+        config.ffmpegManagedDownloadAllowed = false;
+        config.ffmpegManagedSourceUrl = "";
+        config.ffmpegManagedVersion = "";
+        config.ffmpegManagedSha256 = "";
+        config.ffmpegManagedLicense = "";
+        if ("managed".equals(FfmpegLocator.normalizedMode(config))) {
+            config.ffmpegMode = "system";
+        }
+        saveConfig();
+        return "Managed FFmpeg files were removed and ffmpegMode is now " + config.ffmpegMode + ".";
+    }
+
+    public void downloadManagedFfmpeg(CommandSourceStack source) {
+        ensureServer();
+        source.sendSuccess(() -> Component.literal("Starting managed FFmpeg download after explicit admin confirmation. This may take a while."), false);
+        Thread thread = new Thread(() -> {
+            try {
+                ManagedFfmpegProvider.ManagedInstallResult result = managedFfmpegProvider.install(
+                        server.getServerDirectory(),
+                        config,
+                        message -> Musicxcst.LOGGER.info("Managed FFmpeg setup: {}", message)
+                );
+                config.ffmpegMode = "managed";
+                saveConfig();
+                server.execute(() -> source.sendSuccess(() -> Component.literal("Managed FFmpeg installed: " + result.versionLine()), true));
+            } catch (IllegalArgumentException exception) {
+                server.execute(() -> source.sendFailure(Component.literal("Managed FFmpeg setup failed: " + exception.getMessage())));
+            }
+        }, "musicxcst-server-managed-ffmpeg-download");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     public String createDiscForPlayer(CommandSourceStack source, ServerPlayer player, String requestedName, String requestedColor, String requestedLocation) {
@@ -1167,6 +1224,11 @@ public final class MusicLibraryService {
             }
             if (this.config.previewCacheSeconds == 7) {
                 this.config.previewCacheSeconds = 15;
+                saveConfig();
+            }
+            if (!FfmpegLocator.normalizedMode(this.config).equals(this.config.ffmpegMode)) {
+                Musicxcst.LOGGER.warn("Migrating unsupported ffmpegMode '{}' to '{}'. Public MusicXCST builds do not bundle FFmpeg binaries.", this.config.ffmpegMode, FfmpegLocator.normalizedMode(this.config));
+                this.config.ffmpegMode = FfmpegLocator.normalizedMode(this.config);
                 saveConfig();
             }
             this.importRoot = server.getWorldPath(LevelResource.ROOT).resolve(config.serverImportFolder).normalize();

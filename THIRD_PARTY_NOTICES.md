@@ -6,13 +6,11 @@ MusicXCST can use FFmpeg for audio probing and transcoding. FFmpeg binaries are 
 
 MusicXCST invokes FFmpeg as a separate executable process. It does not link FFmpeg libraries into the mod jar.
 
-Bundled binaries, when distributed, are expected to be placed under `native/ffmpeg/<platform>/` in the jar and extracted at runtime to `config/musicxcst/native/ffmpeg/<platform>/`.
+MusicXCST public release jars do not ship FFmpeg binaries, native libraries, archives, base64 blobs, or renamed executable payloads. Users and server owners may install FFmpeg separately, configure an explicit path, or use a managed setup flow when their platform has a pinned verified download.
 
-The bundled Windows binary is expected to come from GyanD FFmpeg builds. The bundled Linux x86_64 binary is expected to come from BtbN FFmpeg builds. Packagers should verify the exact binary, version, license, configure flags, and checksums before distributing a jar.
+Managed setup downloads only after explicit user/admin action, verifies SHA-256 before extraction, extracts only expected files, checks `ffmpeg -version`, rejects `--enable-nonfree`, and stores source URL, version, hash, and license metadata under `config/musicxcst/ffmpeg/managed/<platform>/`.
 
-For redistribution, prefer stable release LGPL builds without `--enable-gpl` and without `--enable-nonfree`. GPL builds may impose GPL obligations on the distributed binary package, and `--enable-nonfree` builds must not be redistributed.
-
-Place the matching FFmpeg license text, source/build URL, version, commit if available, configure flags, and checksums under `licenses/ffmpeg/` when bundling binaries.
+For any separately installed or managed FFmpeg binary, prefer LGPL builds without `--enable-nonfree`. GPL builds may impose GPL obligations on the binary package, and `--enable-nonfree` builds must not be redistributed.
 
 MusicXCST does not include copyrighted music. Users are responsible for uploading audio they have rights to use.
 

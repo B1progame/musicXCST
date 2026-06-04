@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst.client;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.client.screen.FfmpegSetupScreen;
 import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
 import de.coulees.B1progame.musicxcst.media.AudioValidation;
 import de.coulees.B1progame.musicxcst.media.FfmpegLocator;
@@ -41,11 +42,17 @@ public final class ClientMusicUploader {
 
     public static int startUpload(Minecraft client, String name, String pathText, Consumer<String> afterUpload, Consumer<String> progress) {
         Path path = Path.of(stripWrappingQuotes(pathText.trim())).normalize();
-        CstMusicConfig config = new CstMusicConfig();
+        CstMusicConfig config = ClientFfmpegConfig.load(client);
         try {
             AUDIO_VALIDATION.validateClientInput(path, config);
         } catch (IllegalArgumentException exception) {
             sendClientMessage(client, Component.literal(exception.getMessage()));
+            return 0;
+        }
+
+        boolean oggInput = "ogg".equals(AUDIO_VALIDATION.extension(path.getFileName().toString()));
+        if (!oggInput && FFMPEG_LOCATOR.locate(client.gameDirectory.toPath(), config).isEmpty()) {
+            client.setScreen(new FfmpegSetupScreen(client.screen, name, pathText, afterUpload, progress));
             return 0;
         }
 
@@ -59,6 +66,14 @@ public final class ClientMusicUploader {
     private static void transcodeAndUploadFile(Minecraft client, String name, Path path, CstMusicConfig config, Consumer<String> afterUpload, Consumer<String> progress) {
         Path transcoded = null;
         try {
+            if ("ogg".equals(AUDIO_VALIDATION.extension(path.getFileName().toString()))
+                    && FFMPEG_LOCATOR.locate(client.gameDirectory.toPath(), config).isEmpty()) {
+                if (progress != null) {
+                    client.execute(() -> progress.accept("Uploading OGG audio..."));
+                }
+                uploadFile(client, name, path, afterUpload, progress);
+                return;
+            }
             String ffmpeg = FFMPEG_LOCATOR.require(client.gameDirectory.toPath(), config);
             Path folder = client.gameDirectory.toPath().resolve("config").resolve(Musicxcst.MOD_ID).resolve("client-transcoded").normalize();
             transcoded = folder.resolve(UUID.randomUUID().toString().replace("-", "") + ".ogg").normalize();

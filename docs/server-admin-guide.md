@@ -20,34 +20,20 @@ MusicXCST uses FFmpeg for conversion and probing.
 - The server still validates, stores, hashes, probes, and distributes the uploaded normalized audio.
 - Admin server-side imports may require server-side transcoding if the source file is not already playable OGG.
 
-The default config is:
+The public MusicXCST jar does not bundle FFmpeg executables. The default config is:
 
 ```text
-ffmpegMode = bundled
+ffmpegMode = system
 ```
 
-Resolution order:
+Modes:
 
 1. `ffmpegMode = disabled`: never use FFmpeg.
 2. `ffmpegMode = path`: use `ffmpegPath`.
 3. `ffmpegMode = system`: use `ffmpeg` from PATH.
-4. `ffmpegMode = bundled`: extract a bundled binary if present, then fall back to system FFmpeg.
+4. `ffmpegMode = managed`: use an admin-approved verified download from `config/musicxcst/ffmpeg/managed/<platform>/`.
 
-Bundled binaries are expected inside the jar at:
-
-```text
-native/ffmpeg/windows-x86_64/ffmpeg.exe
-native/ffmpeg/linux-x86_64/ffmpeg
-native/ffmpeg/linux-aarch64/ffmpeg
-native/ffmpeg/macos-x86_64/ffmpeg
-native/ffmpeg/macos-aarch64/ffmpeg
-```
-
-At runtime they are extracted to:
-
-```text
-config/musicxcst/native/ffmpeg/<platform>/
-```
+Old `ffmpegMode = bundled` configs are migrated to `system`.
 
 Install examples:
 
@@ -68,6 +54,17 @@ Verify:
 ```bash
 ffmpeg -version
 ```
+
+Admin FFmpeg commands:
+
+```text
+/cstmusic admin ffmpeg status
+/cstmusic admin ffmpeg path <path>
+/cstmusic admin ffmpeg download confirm
+/cstmusic admin ffmpeg reset
+```
+
+Dedicated servers never open FFmpeg setup screens and never download FFmpeg automatically. Managed download only starts after `/cstmusic admin ffmpeg download confirm`. If the current platform has no pinned managed source, install FFmpeg manually and use `system` or `path`.
 
 ## Storage
 
@@ -136,6 +133,10 @@ Dedicated servers should keep `allowAdminAbsoluteServerPaths` disabled unless tr
 /cstmusic admin info <musicId>
 /cstmusic admin delete <musicId>
 /cstmusic admin play <musicId>
+/cstmusic admin ffmpeg status
+/cstmusic admin ffmpeg path <path>
+/cstmusic admin ffmpeg download confirm
+/cstmusic admin ffmpeg reset
 /cstmusic admin reload
 /cstmusic admin repairindex
 ```

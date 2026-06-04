@@ -53,6 +53,8 @@ processResources {
     inputs.property "minecraft_version", project.minecraft_version
     inputs.property "loader_version", project.loader_version
     filteringCharset "UTF-8"
+    exclude("native/ffmpeg/**")
+    exclude("musicxcst/ffmpeg/**")
 
     filesMatching("fabric.mod.json") {
         expand "version": project.version,
@@ -88,6 +90,43 @@ jar {
     from("LICENSE") {
         rename { "${it}_${project.archives_base_name}" }
     }
+}
+
+tasks.register("verifyReleaseJarNoNativeBinaries") {
+    dependsOn tasks.named("jar")
+    group = "verification"
+    description = "Fails if the release jar contains bundled native executables or FFmpeg binaries."
+
+    doLast {
+        def jarFile = tasks.named("jar").get().archiveFile.get().asFile
+        def forbidden = []
+        def executableExtensions = [".exe", ".dll", ".so", ".dylib", ".bat", ".cmd", ".sh"]
+        new java.util.zip.ZipFile(jarFile).withCloseable { zip ->
+            zip.entries().each { entry ->
+                if (entry.directory) {
+                    return
+                }
+                def name = entry.name.replace('\\', '/')
+                def lower = name.toLowerCase(Locale.ROOT)
+                def fileName = lower.substring(lower.lastIndexOf('/') + 1)
+                if (executableExtensions.any { lower.endsWith(it) }) {
+                    forbidden.add(name)
+                } else if (lower.startsWith("native/ffmpeg/") || lower.startsWith("musicxcst/ffmpeg/")) {
+                    forbidden.add(name)
+                } else if ((fileName == "ffmpeg" || fileName == "ffprobe") && (lower.contains("/native/") || lower.contains("/ffmpeg/"))) {
+                    forbidden.add(name)
+                }
+            }
+        }
+        if (!forbidden.isEmpty()) {
+            throw new GradleException("Release jar contains forbidden native executable/FFmpeg entries:\n - " + forbidden.join("\n - "))
+        }
+        logger.lifecycle("Verified ${jarFile.name}: no bundled executable/native FFmpeg entries found.")
+    }
+}
+
+tasks.named("check") {
+    dependsOn tasks.named("verifyReleaseJarNoNativeBinaries")
 }
 
 // configure the maven publication

@@ -100,6 +100,14 @@ public final class CstMusicCommands {
                 .then(Commands.literal("admin")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.literal("storage").executes(ctx -> adminStorage(ctx.getSource())))
+                        .then(Commands.literal("ffmpeg")
+                                .then(Commands.literal("status").executes(ctx -> ffmpegStatus(ctx.getSource())))
+                                .then(Commands.literal("path")
+                                        .then(Commands.argument("path", StringArgumentType.greedyString())
+                                                .executes(ctx -> ffmpegPath(ctx.getSource(), StringArgumentType.getString(ctx, "path")))))
+                                .then(Commands.literal("download")
+                                        .then(Commands.literal("confirm").executes(ctx -> ffmpegDownloadConfirm(ctx.getSource()))))
+                                .then(Commands.literal("reset").executes(ctx -> ffmpegReset(ctx.getSource()))))
                         .then(Commands.literal("list")
                                 .executes(ctx -> adminList(ctx.getSource(), 1))
                                 .then(Commands.argument("page", IntegerArgumentType.integer(1))
@@ -160,6 +168,10 @@ public final class CstMusicCommands {
             sendCommandHelp(source, "/cstmusic admin debugdisc quadrants", "Create a render-test Blueprint CD with stored design pixels.");
             sendCommandHelp(source, "/cstmusic admin reload", "Reload config and music index.");
             sendCommandHelp(source, "/cstmusic admin repairindex", "Repair the music index from stored files.");
+            sendCommandHelp(source, "/cstmusic admin ffmpeg status", "Show server FFmpeg mode and availability.");
+            sendCommandHelp(source, "/cstmusic admin ffmpeg path <path>", "Use an explicit server FFmpeg executable path.");
+            sendCommandHelp(source, "/cstmusic admin ffmpeg download confirm", "Download verified managed FFmpeg where supported.");
+            sendCommandHelp(source, "/cstmusic admin ffmpeg reset", "Remove managed FFmpeg files and return to system mode.");
         }
         return 1;
     }
@@ -336,6 +348,26 @@ public final class CstMusicCommands {
 
     private static int repairIndex(CommandSourceStack source) {
         source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.repairIndex()), true);
+        return 1;
+    }
+
+    private static int ffmpegStatus(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.ffmpegStatus()), false);
+        return 1;
+    }
+
+    private static int ffmpegPath(CommandSourceStack source, String path) {
+        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.setFfmpegPath(path)), true);
+        return 1;
+    }
+
+    private static int ffmpegDownloadConfirm(CommandSourceStack source) {
+        Musicxcst.LIBRARY.downloadManagedFfmpeg(source);
+        return 1;
+    }
+
+    private static int ffmpegReset(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.resetManagedFfmpeg()), true);
         return 1;
     }
 

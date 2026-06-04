@@ -11,7 +11,7 @@ public final class CstMusicConfig {
     public String serverImportFolder = "music-import";
     public String serverNormalizedAudioFolder = "music-normalized";
     public String normalizedOutputFormat = "ogg";
-    public String ffmpegMode = "bundled";
+    public String ffmpegMode = "system";
     public int audioBitrateKbps = 128;
     public int maxUploadMb = 25;
     public int maxDurationSeconds = 0;
@@ -31,6 +31,11 @@ public final class CstMusicConfig {
     public boolean stereoEnabled = true;
     public boolean monoDownmix = false;
     public String ffmpegPath = "ffmpeg";
+    public boolean ffmpegManagedDownloadAllowed = false;
+    public String ffmpegManagedSourceUrl = "";
+    public String ffmpegManagedVersion = "";
+    public String ffmpegManagedSha256 = "";
+    public String ffmpegManagedLicense = "";
     public int playbackRadiusBlocks = 96;
     public int rangeCheckIntervalTicks = 20;
     public int fadeInMilliseconds = 250;

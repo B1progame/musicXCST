@@ -32,29 +32,34 @@ The mod is built for singleplayer worlds, LAN worlds, multiplayer servers, modpa
 
 ### FFmpeg
 
-MusicXCST uses FFmpeg for audio probing and transcoding. The default config is:
+MusicXCST uses FFmpeg for audio probing and transcoding, but the public mod jar does not bundle FFmpeg binaries. This avoids shipping third-party native executables in CurseForge/Modrinth release jars and keeps FFmpeg installation under the user or server owner's control.
+
+The default config is:
 
 ```text
-ffmpegMode = bundled
+ffmpegMode = system
 ```
 
-When a bundled binary is available for the platform, MusicXCST extracts it to:
+Supported modes:
 
 ```text
-config/musicxcst/native/ffmpeg/<platform>/
+system   Use ffmpeg from PATH.
+path     Use the executable configured in ffmpegPath.
+managed  Use a user-approved, verified download stored outside the jar.
+disabled Do not use FFmpeg; already-compatible OGG files may still work.
 ```
 
-Supported bundled resource locations are:
+Client managed files are stored under:
 
 ```text
-native/ffmpeg/windows-x86_64/ffmpeg.exe
-native/ffmpeg/linux-x86_64/ffmpeg
-native/ffmpeg/linux-aarch64/ffmpeg
-native/ffmpeg/macos-x86_64/ffmpeg
-native/ffmpeg/macos-aarch64/ffmpeg
+<minecraft directory>/config/musicxcst/ffmpeg/managed/<platform>/
 ```
 
-If no bundled binary is present, set `ffmpegMode` to `system` or `path`, or upload already-normalized `.ogg` files where possible.
+Server managed files are stored under the server directory at the same relative path. The mod never writes FFmpeg into the jar or system folders.
+
+On the Minecraft title screen, the client shows a top-right MusicXCST banner when MusicXCST does not have its own managed FFmpeg installed, even if system FFmpeg exists on PATH. Click the banner to open setup. The setup screen also appears when a non-OGG file needs conversion and FFmpeg is missing. It offers **Download FFmpeg**, **Use system FFmpeg**, **Choose FFmpeg path**, **Use OGG only**, and **Cancel**. No executable is downloaded unless the user clicks **Download FFmpeg**.
+
+Managed download currently supports Windows x86_64 using the BtbN LGPL FFmpeg 8.1 build pinned by SHA-256. Other platforms should install FFmpeg manually and use `system` or `path`.
 
 ## Installation
 
@@ -102,6 +107,10 @@ Admin-only commands:
 /cstmusic admin info <musicId>
 /cstmusic admin delete <musicId>
 /cstmusic admin play <musicId>
+/cstmusic admin ffmpeg status
+/cstmusic admin ffmpeg path <path>
+/cstmusic admin ffmpeg download confirm
+/cstmusic admin ffmpeg reset
 /cstmusic admin reload
 /cstmusic admin repairindex
 ```
@@ -117,6 +126,10 @@ maxTotalServerStorageBytes
 allowedFileExtensions
 ffmpegMode
 ffmpegPath
+ffmpegManagedDownloadAllowed
+ffmpegManagedSourceUrl
+ffmpegManagedVersion
+ffmpegManagedSha256
 allowServerSideTranscoding
 audioBitrate
 sampleRate
@@ -184,25 +197,41 @@ Security and safety behavior:
 
 MusicXCST invokes FFmpeg as a separate executable process. It does not link FFmpeg libraries into the mod jar.
 
-Packagers should verify the exact FFmpeg build before distributing a bundled jar:
+MusicXCST public release jars do not contain FFmpeg `.exe` files, native libraries, or hidden binary archives. Build checks fail if the release jar contains executable/native FFmpeg entries.
 
-- Prefer stable LGPL builds.
-- Do not distribute builds configured with `--enable-nonfree`.
-- Avoid GPL builds unless the pack intentionally accepts GPL distribution obligations.
-- Include FFmpeg license files, source/build URLs, configure flags, and checksums in `licenses/ffmpeg/`.
+Manual install examples:
+
+```powershell
+winget install BtbN.FFmpeg.LGPL
+winget install Gyan.FFmpeg
+```
+
+```bash
+sudo apt install ffmpeg
+sudo dnf install ffmpeg
+brew install ffmpeg
+```
+
+Managed download rules:
+
+- HTTPS only.
+- Exact SHA-256 verification before extraction.
+- Extract only the expected `ffmpeg` executable.
+- Reject builds reporting `--enable-nonfree`.
+- Save source URL, version, SHA-256, and license metadata in the managed folder.
+- Never run downloaded FFmpeg until the archive hash has passed.
 
 See:
 
 - `THIRD_PARTY_NOTICES.md`
 - `licenses/ffmpeg/README.md`
-- `src/main/resources/musicxcst/ffmpeg/README.md`
 
 ## For Modpack Creators
 
 - Confirm redistribution permission before publishing a pack that includes the MusicXCST jar.
 - Use MusicXCST on both client and server.
 - Include Fabric API and GeckoLib.
-- Decide whether the pack ships bundled FFmpeg binaries or expects system/path FFmpeg.
+- Do not include FFmpeg executables in the MusicXCST jar. Expect system/path FFmpeg or the explicit managed setup flow.
 - Review server defaults before publishing a public pack.
 - Do not include copyrighted music unless the pack has permission to distribute it.
 - Keep the license and third-party notice files with the mod distribution.
@@ -210,11 +239,11 @@ See:
 ## Known Limitations
 
 - MusicXCST targets Minecraft `26.1.2`; other versions are not guaranteed.
-- FFmpeg availability depends on bundled binaries, system installation, or explicit config.
+- FFmpeg availability depends on system installation, explicit path config, or user-approved managed setup.
 - Very large libraries can consume server disk space quickly without quotas.
 - Playback uses a custom client audio path, so every listener needs the mod installed.
 - Network latency and cache misses can delay full-track playback while audio chunks download.
-- Advanced custom disc texture rendering is client-side and falls back to the Blueprint CD if item data is missing or corrupt.
+- Custom disc designs fall back to the Blueprint CD appearance if item design data is missing or corrupt.
 
 ## Roadmap
 
@@ -232,11 +261,11 @@ Planned or likely future improvements:
 - Created by B1progame.
 - Built for Fabric with Fabric API.
 - Uses GeckoLib for animated block rendering.
-- Uses FFmpeg as an optional/bundled external media executable.
+- Uses FFmpeg as an optional external media executable.
 - Uses Minecraft client audio facilities plus STB Vorbis/OpenAL for custom playback.
 
 ## License
 
 MusicXCST source code, artwork, models, sounds, and original project files are all rights reserved unless a file states otherwise. See `LICENSE`.
 
-Bundled third-party executables, including FFmpeg binaries, are covered by their own upstream licenses. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/`.
+MusicXCST does not bundle FFmpeg executables in the public release jar. FFmpeg, when installed separately or through managed setup, is covered by its own upstream licenses. See `THIRD_PARTY_NOTICES.md` and `licenses/ffmpeg/`.
