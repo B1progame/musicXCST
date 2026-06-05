@@ -74,7 +74,9 @@ public final class CstMusicCommands {
                                                 StringArgumentType.getString(ctx, "path")
                                         )))))
                 .then(Commands.literal("list")
-                        .executes(ctx -> listOwn(ctx.getSource())))
+                        .executes(ctx -> listOwn(ctx.getSource(), false))
+                        .then(Commands.literal("all")
+                                .executes(ctx -> listOwn(ctx.getSource(), true))))
                 .then(Commands.literal("info")
                         .executes(ctx -> infoUsage(ctx.getSource()))
                         .then(Commands.argument("musicRef", StringArgumentType.string())
@@ -147,7 +149,8 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("  3. Press Print and keep the GUI/server connection open until conversion finishes.").withStyle(ChatFormatting.AQUA), false);
         source.sendSuccess(() -> Component.literal("  Supported files: mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi.").withStyle(ChatFormatting.YELLOW), false);
         source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
-        sendCommandHelp(source, "/cstmusic list", "Show your registered uploaded music names.");
+        sendCommandHelp(source, "/cstmusic list", "Show your available uploaded music names.");
+        sendCommandHelp(source, "/cstmusic list all", "Show your uploaded music names including deleted or missing entries.");
         sendCommandHelp(source, "/cstmusic info <uploadedFile>", "Show status, owner, file size, checksum, and color.");
         sendCommandHelp(source, "/cstmusic delete <uploadedFile>", "Delete one of your music entries.");
         sendCommandHelp(source, "/cstmusic storage", "Show your storage usage and server storage if you are admin.");
@@ -274,15 +277,21 @@ public final class CstMusicCommands {
         return normalized.toLowerCase(Locale.ROOT).matches("[0-9a-f]{6}");
     }
 
-    private static int listOwn(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int listOwn(CommandSourceStack source, boolean includeUnavailable) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        List<MusicEntry> entries = Musicxcst.LIBRARY.listEntriesForPlayer(player);
+        List<MusicEntry> entries = Musicxcst.LIBRARY.listEntriesForPlayer(player).stream()
+                .filter(entry -> includeUnavailable || MusicStatus.ACTIVE.equals(entry.status))
+                .toList();
         if (entries.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("No music entries registered.").withStyle(ChatFormatting.YELLOW), false);
+            source.sendSuccess(() -> Component.literal(includeUnavailable
+                    ? "No music entries registered."
+                    : "No available music entries. Use /cstmusic list all to show deleted or missing entries.").withStyle(ChatFormatting.YELLOW), false);
             return 1;
         }
 
-        source.sendSuccess(() -> Component.literal("Your registered music uploads:").withStyle(ChatFormatting.GOLD), false);
+        source.sendSuccess(() -> Component.literal(includeUnavailable
+                ? "Your music uploads:"
+                : "Your available music uploads:").withStyle(ChatFormatting.GOLD), false);
         for (MusicEntry entry : entries) {
             source.sendSuccess(() -> entryLine(playerReference(entry), entry.displayName, entry.status), false);
         }
@@ -310,7 +319,7 @@ public final class CstMusicCommands {
     private static int infoUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         source.sendSuccess(() -> Component.literal("Usage: ").withStyle(ChatFormatting.YELLOW)
                 .append(Component.literal("/cstmusic info <uploadedFile>").withStyle(ChatFormatting.AQUA)), false);
-        return listOwn(source);
+        return listOwn(source, false);
     }
 
     private static int delete(CommandSourceStack source, String musicRef, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -324,7 +333,7 @@ public final class CstMusicCommands {
     private static int deleteUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         source.sendSuccess(() -> Component.literal("Usage: ").withStyle(ChatFormatting.YELLOW)
                 .append(Component.literal("/cstmusic delete <uploadedFile>").withStyle(ChatFormatting.AQUA)), false);
-        return listOwn(source);
+        return listOwn(source, false);
     }
 
     private static int storage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
