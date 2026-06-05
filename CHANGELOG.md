@@ -8,10 +8,21 @@ Release for Minecraft `26.1.2` on Fabric.
 
 - `/cstmusic storage` now shows whether the per-player music file limit is enabled, the active file count, and the configured limit mode.
 - Per-player music file limits now count active tracks only, so missing, invalid, or deleted entries no longer block new uploads.
+- `/cstmusic list` now shows only currently available music.
+- Player music commands now use uploaded file names where possible instead of forcing players to copy music IDs.
+- Command output is now color-coded for easier reading.
+- CD Writer uploads now keep the original imported file name for uploaded music suggestions.
 
 ### Fixed
 
 - Fixed `/cstmusic info` and `/cstmusic delete` without a music ID showing Minecraft's raw incomplete-command error instead of useful usage and the player's music list.
+- Fixed the CD Writer so previously uploaded music can be selected from suggestions and written again without re-uploading it.
+- Fixed uploaded music suggestions to show up to 6 matching files.
+- Fixed deleting music so it removes the stored playback files and the reusable uploaded file.
+- Fixed delete messages and suggestions so they show uploaded names instead of player UUID folders or raw IDs.
+- Fixed deleting duplicate uploaded names by selecting the newest matching active entry instead of failing.
+- Fixed uploaded-disc creation creating an extra duplicate file in the `created` folder.
+- Fixed invalid Blueprint CDs rendering with extra custom color or texture overlays.
 
 ## 0.1.3
 
