@@ -86,8 +86,9 @@ public final class DiscData {
         tag.putString("displayName", data.displayName);
         tag.putString("ownerUuid", data.ownerUuid);
         tag.putString("ownerName", data.ownerName);
-        tag.putString("hexColor", data.hexColor);
-        int[] sanitizedDesign = sanitizeDesign(data.designPixels);
+        boolean invalid = MusicStatus.isInvalidLike(data.status);
+        tag.putString("hexColor", invalid ? "" : data.hexColor);
+        int[] sanitizedDesign = invalid ? defaultDesign() : sanitizeDesign(data.designPixels);
         Musicxcst.LOGGER.debug("DiscData.writeToStack design {}", designDebugSummary(sanitizedDesign));
         tag.putString("designId", encodeDesignId(sanitizedDesign));
         tag.putIntArray("designPixels", sanitizedDesign);
@@ -97,7 +98,7 @@ public final class DiscData {
         CustomData.update(DataComponents.CUSTOM_DATA, stack, root -> root.put(Musicxcst.DISC_DATA_KEY, tag));
         stack.set(DataComponents.CUSTOM_NAME, buildHoverName(data));
         stack.set(DataComponents.DYED_COLOR, new DyedItemColor(renderColor(data)));
-        stack.set(DataComponents.ITEM_MODEL, MusicStatus.isInvalidLike(data.status) ? INVALID_MODEL : VALID_MODEL);
+        stack.set(DataComponents.ITEM_MODEL, invalid ? INVALID_MODEL : VALID_MODEL);
     }
 
     public static Component buildHoverName(DiscData data) {
@@ -392,7 +393,7 @@ public final class DiscData {
 
     private static int renderColor(DiscData data) {
         if (MusicStatus.isInvalidLike(data.status)) {
-            return 0xC93A3A;
+            return 0xFFFFFF;
         }
 
         Integer designColor = averageDesignColor(data.designPixels);

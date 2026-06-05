@@ -47,11 +47,13 @@ public final class BlueprintCdItem extends Item {
 
         tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.music_id", data.musicId).withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.owner", data.ownerName).withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.color", data.hexColor).withStyle(ChatFormatting.GRAY));
         tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.status", data.status).withStyle(MusicStatus.isInvalidLike(data.status) ? ChatFormatting.RED : ChatFormatting.GREEN));
 
         if (MusicStatus.isInvalidLike(data.status)) {
             tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.invalid_warning").withStyle(ChatFormatting.RED));
+            return;
         }
+
+        tooltip.accept(Component.translatable("tooltip.musicxcst.blueprint_cd.color", data.hexColor).withStyle(ChatFormatting.GRAY));
     }
 }

@@ -72,6 +72,9 @@ public final class BlueprintCdItemRenderer {
         if (data == null) {
             return;
         }
+        if (MusicStatus.isInvalidLike(data.status)) {
+            return;
+        }
 
         ItemStackRenderStateAccessor renderStateAccessor = (ItemStackRenderStateAccessor) renderState;
         int activeLayerCount = renderStateAccessor.musicxcst$getActiveLayerCount();
@@ -178,24 +181,7 @@ public final class BlueprintCdItemRenderer {
     }
 
     private static int[] pixelsForRender(DiscData data) {
-        int[] pixels = DiscData.sanitizeDesign(data.designPixels);
-        if (!MusicStatus.isInvalidLike(data.status)) {
-            return pixels;
-        }
-
-        int[] invalid = new int[pixels.length];
-        for (int index = 0; index < pixels.length; index++) {
-            int pixel = pixels[index];
-            if ((pixel >>> 24) == 0) {
-                invalid[index] = 0;
-                continue;
-            }
-            int red = Math.max(160, (pixel >> 16) & 0xFF);
-            int green = (((pixel >> 8) & 0xFF) * 35) / 100;
-            int blue = ((pixel & 0xFF) * 35) / 100;
-            invalid[index] = 0xFF000000 | (red << 16) | (green << 8) | blue;
-        }
-        return invalid;
+        return DiscData.sanitizeDesign(data.designPixels);
     }
 
     private static void logContextOnce(ItemDisplayContext displayContext, DiscData data) {
