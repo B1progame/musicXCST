@@ -77,14 +77,14 @@ public final class CstMusicCommands {
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
                         .executes(ctx -> infoUsage(ctx.getSource()))
-                        .then(Commands.argument("musicId", StringArgumentType.word())
-                                .suggests(CstMusicCommands::suggestOwnMusicIds)
-                                .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
+                        .then(Commands.argument("musicRef", StringArgumentType.string())
+                                .suggests(CstMusicCommands::suggestOwnMusicReferences)
+                                .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false))))
                 .then(Commands.literal("delete")
                         .executes(ctx -> deleteUsage(ctx.getSource()))
-                        .then(Commands.argument("musicId", StringArgumentType.word())
-                                .suggests(CstMusicCommands::suggestOwnMusicIds)
-                                .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
+                        .then(Commands.argument("musicRef", StringArgumentType.string())
+                                .suggests(CstMusicCommands::suggestOwnMusicReferences)
+                                .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false))))
                 .then(Commands.literal("storage")
                         .executes(ctx -> storage(ctx.getSource())))
                 .then(Commands.literal("download")
@@ -147,9 +147,9 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("  3. Press Print and keep the GUI/server connection open until conversion finishes.").withStyle(ChatFormatting.AQUA), false);
         source.sendSuccess(() -> Component.literal("  Supported files: mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi.").withStyle(ChatFormatting.YELLOW), false);
         source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
-        sendCommandHelp(source, "/cstmusic list", "Show your registered music IDs.");
-        sendCommandHelp(source, "/cstmusic info <musicId>", "Show status, owner, file size, checksum, and color.");
-        sendCommandHelp(source, "/cstmusic delete <musicId>", "Delete one of your music entries.");
+        sendCommandHelp(source, "/cstmusic list", "Show your registered uploaded music names.");
+        sendCommandHelp(source, "/cstmusic info <uploadedFile>", "Show status, owner, file size, checksum, and color.");
+        sendCommandHelp(source, "/cstmusic delete <uploadedFile>", "Delete one of your music entries.");
         sendCommandHelp(source, "/cstmusic storage", "Show your storage usage and server storage if you are admin.");
         source.sendSuccess(() -> Component.literal("Avoid playback gaps by pre-downloading full audio:").withStyle(ChatFormatting.GRAY), false);
         sendCommandHelp(source, "/cstmusic download all", "Download all active Blueprint CD audio to your local cache now.");
@@ -253,17 +253,17 @@ public final class CstMusicCommands {
             return 1;
         }
 
-        source.sendSuccess(() -> Component.literal("Your registered music entries:"), false);
+        source.sendSuccess(() -> Component.literal("Your registered music uploads:"), false);
         for (MusicEntry entry : entries) {
-            source.sendSuccess(() -> Component.literal("- " + entry.musicId + " | " + entry.displayName + " | " + entry.status), false);
+            source.sendSuccess(() -> Component.literal("- " + playerReference(entry) + " | Disc: " + entry.displayName + " | " + entry.status), false);
         }
         return entries.size();
     }
 
-    private static int info(CommandSourceStack source, String musicId, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int info(CommandSourceStack source, String musicRef, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         MusicEntry entry = adminScope
-                ? Musicxcst.LIBRARY.requireAdminVisibleEntry(source, musicId)
-                : Musicxcst.LIBRARY.requirePlayerVisibleEntry(source.getPlayerOrException(), musicId);
+                ? Musicxcst.LIBRARY.requireAdminVisibleEntry(source, musicRef)
+                : Musicxcst.LIBRARY.requirePlayerVisibleEntry(source.getPlayerOrException(), musicRef);
 
         source.sendSuccess(() -> Component.literal("Music ID: " + entry.musicId), false);
         source.sendSuccess(() -> Component.literal("Name: " + entry.displayName), false);
@@ -279,20 +279,20 @@ public final class CstMusicCommands {
     }
 
     private static int infoUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        source.sendSuccess(() -> Component.literal("Usage: /cstmusic info <musicId>"), false);
+        source.sendSuccess(() -> Component.literal("Usage: /cstmusic info <uploadedFile>"), false);
         return listOwn(source);
     }
 
-    private static int delete(CommandSourceStack source, String musicId, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+    private static int delete(CommandSourceStack source, String musicRef, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         String result = adminScope
-                ? Musicxcst.LIBRARY.deleteEntryAsAdmin(source, musicId)
-                : Musicxcst.LIBRARY.deleteEntryAsOwner(source.getPlayerOrException(), musicId);
+                ? Musicxcst.LIBRARY.deleteEntryAsAdmin(source, musicRef)
+                : Musicxcst.LIBRARY.deleteEntryAsOwner(source.getPlayerOrException(), musicRef);
         source.sendSuccess(() -> Component.literal(result), true);
         return 1;
     }
 
     private static int deleteUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        source.sendSuccess(() -> Component.literal("Usage: /cstmusic delete <musicId>"), false);
+        source.sendSuccess(() -> Component.literal("Usage: /cstmusic delete <uploadedFile>"), false);
         return listOwn(source);
     }
 
@@ -505,6 +505,21 @@ public final class CstMusicCommands {
         }
     }
 
+    private static CompletableFuture<Suggestions> suggestOwnMusicReferences(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            ServerPlayer player = context.getSource().getPlayerOrException();
+            Musicxcst.LIBRARY.listEntriesForPlayer(player).stream()
+                    .filter(entry -> !MusicStatus.isInvalidLike(entry.status))
+                    .map(CstMusicCommands::playerReference)
+                    .distinct()
+                    .map(StringArgumentType::escapeIfRequired)
+                    .forEach(builder::suggest);
+            return builder.buildFuture();
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException exception) {
+            return Suggestions.empty();
+        }
+    }
+
     private static CompletableFuture<Suggestions> suggestAllMusicIds(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
         return SharedSuggestionProvider.suggest(
                 Musicxcst.LIBRARY.listAllEntries().stream()
@@ -525,6 +540,16 @@ public final class CstMusicCommands {
 
     private static CompletableFuture<Suggestions> suggestHexColors(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
         return SharedSuggestionProvider.suggest(List.of("#C93A3A", "#00AAFF", "C93A3A"), builder);
+    }
+
+    private static String playerReference(MusicEntry entry) {
+        if (entry.originalFileName != null && !entry.originalFileName.isBlank()) {
+            return entry.originalFileName;
+        }
+        if (entry.displayName != null && !entry.displayName.isBlank()) {
+            return entry.displayName;
+        }
+        return entry.musicId;
     }
 
     private record CreateArguments(String hexColor, String location) {

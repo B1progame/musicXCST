@@ -508,7 +508,7 @@ public final class MusicLibraryService {
     }
 
     public MusicEntry requirePlayerVisibleEntry(ServerPlayer player, String musicId) {
-        MusicEntry entry = requireEntry(musicId);
+        MusicEntry entry = requirePlayerEntryReference(player, musicId);
         if (!Objects.equals(entry.ownerUuid, player.getUUID().toString())) {
             throw new IllegalArgumentException("You can only access your own music entries.");
         }
@@ -525,7 +525,7 @@ public final class MusicLibraryService {
     public String deleteEntryAsOwner(ServerPlayer player, String musicId) {
         MusicEntry entry = requirePlayerVisibleEntry(player, musicId);
         markDeleted(entry);
-        return "Deleted music entry " + entry.musicId + ".";
+        return "Deleted music entry " + displayEntryReference(entry) + ".";
     }
 
     public String deleteEntryAsAdmin(CommandSourceStack source, String musicId) {
@@ -534,7 +534,7 @@ public final class MusicLibraryService {
         }
         MusicEntry entry = requireEntry(musicId);
         markDeleted(entry);
-        return "Deleted music entry " + entry.musicId + ".";
+        return "Deleted music entry " + displayEntryReference(entry) + ".";
     }
 
     public StorageStats getPlayerStorage(ServerPlayer player) {
@@ -1311,6 +1311,40 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Unknown music ID: " + musicId);
         }
         return entry;
+    }
+
+    private MusicEntry requirePlayerEntryReference(ServerPlayer player, String reference) {
+        String cleanedReference = stripWrappingQuotes(reference == null ? "" : reference.trim());
+        MusicEntry byId = entries.get(cleanedReference);
+        if (byId != null) {
+            return byId;
+        }
+
+        String owner = player.getUUID().toString();
+        List<MusicEntry> matches = entries.values().stream()
+                .filter(entry -> Objects.equals(entry.ownerUuid, owner))
+                .filter(entry -> !MusicStatus.isInvalidLike(entry.status))
+                .filter(entry -> Objects.equals(entry.originalFileName, cleanedReference)
+                        || Objects.equals(entry.displayName, cleanedReference))
+                .sorted(Comparator.comparingLong(entry -> -entry.createdAtEpochMillis))
+                .toList();
+        if (matches.isEmpty()) {
+            throw new IllegalArgumentException("Unknown uploaded music: " + cleanedReference);
+        }
+        if (matches.size() > 1) {
+            throw new IllegalArgumentException("Multiple active music entries use '" + cleanedReference + "'. Delete one by music ID from /cstmusic info.");
+        }
+        return matches.get(0);
+    }
+
+    private String displayEntryReference(MusicEntry entry) {
+        if (entry.originalFileName != null && !entry.originalFileName.isBlank()) {
+            return entry.originalFileName;
+        }
+        if (entry.displayName != null && !entry.displayName.isBlank()) {
+            return entry.displayName;
+        }
+        return entry.musicId;
     }
 
     private void markDeleted(MusicEntry entry) {
