@@ -16,7 +16,6 @@ import net.minecraft.network.chat.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -71,7 +70,7 @@ public final class ClientMusicUploader {
                 if (progress != null) {
                     client.execute(() -> progress.accept("Uploading OGG audio..."));
                 }
-                uploadFile(client, name, path, afterUpload, progress);
+                uploadFile(client, name, path, path.getFileName().toString(), afterUpload, progress);
                 return;
             }
             String ffmpeg = FFMPEG_LOCATOR.require(client.gameDirectory.toPath(), config);
@@ -86,7 +85,7 @@ public final class ClientMusicUploader {
                     progress.accept(message);
                 }
             }));
-            uploadFile(client, name, result.output(), afterUpload, progress);
+            uploadFile(client, name, result.output(), path.getFileName().toString(), afterUpload, progress);
         } catch (IllegalArgumentException exception) {
             Musicxcst.LOGGER.warn("Failed to transcode music file '{}': {}", path.getFileName(), exception.getMessage());
             sendClientMessage(client, Component.literal("Failed to convert audio: " + exception.getMessage()));
@@ -103,12 +102,13 @@ public final class ClientMusicUploader {
         }
     }
 
-    private static void uploadFile(Minecraft client, String name, Path path, Consumer<String> afterUpload, Consumer<String> progress) {
+    private static void uploadFile(Minecraft client, String name, Path path, String originalFileName, Consumer<String> afterUpload, Consumer<String> progress) {
         String uploadId = UUID.randomUUID().toString().replace("-", "");
         try {
             long sizeBytes = Files.size(path);
             long started = System.currentTimeMillis();
-            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, path.getFileName().toString(), sizeBytes));
+            String serverFileName = uploadedFileName(Path.of(originalFileName));
+            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, serverFileName, sizeBytes));
             try (var input = Files.newInputStream(path)) {
                 byte[] buffer = new byte[CHUNK_BYTES];
                 long offset = 0L;
@@ -126,8 +126,7 @@ public final class ClientMusicUploader {
                 client.execute(() -> progress.accept("Processing on server..."));
             }
             if (afterUpload != null) {
-                String uploadedFileName = uploadedFileName(name, Path.of(sanitizeSongName(name) + ".ogg"));
-                client.execute(() -> afterUpload.accept(uploadedFileName));
+                client.execute(() -> afterUpload.accept(serverFileName));
             }
         } catch (IOException exception) {
             Musicxcst.LOGGER.warn("Failed to upload music file '{}': {}", path.getFileName(), exception.getMessage());
@@ -138,16 +137,11 @@ public final class ClientMusicUploader {
         }
     }
 
-    public static String uploadedFileName(String uploadName, Path sourcePath) {
+    public static String uploadedFileName(Path sourcePath) {
         String sourceFileName = sourcePath.getFileName().toString();
         int dot = sourceFileName.lastIndexOf('.');
-        String extension = dot >= 0 && dot < sourceFileName.length() - 1
-                ? sourceFileName.substring(dot + 1).replaceAll("[^a-zA-Z0-9]+", "").toLowerCase(Locale.ROOT)
-                : "ogg";
-        if (extension.isBlank()) {
-            extension = "ogg";
-        }
-        return sanitizeFileName(sanitizeSongName(uploadName) + "." + extension);
+        String baseName = dot > 0 ? sourceFileName.substring(0, dot) : sourceFileName;
+        return sanitizeFileName(sanitizeSongName(baseName) + ".ogg");
     }
 
     private static String stripWrappingQuotes(String input) {

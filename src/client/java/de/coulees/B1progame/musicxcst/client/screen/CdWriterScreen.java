@@ -68,7 +68,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int UPLOADED_SUGGESTION_Y = 59;
     private static final int UPLOADED_SUGGESTION_WIDTH = 164;
     private static final int UPLOADED_SUGGESTION_HEIGHT = 10;
-    private static final int MAX_VISIBLE_UPLOADED_SUGGESTIONS = 3;
+    private static final int MAX_VISIBLE_UPLOADED_SUGGESTIONS = 6;
     private static final int DESIGN_PANEL_X = 9;
     private static final int DESIGN_PANEL_Y = 71;
     private static final int DESIGN_PANEL_WIDTH = 88;

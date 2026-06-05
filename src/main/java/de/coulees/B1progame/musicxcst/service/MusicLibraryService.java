@@ -745,9 +745,8 @@ public final class MusicLibraryService {
         if (!"ogg".equals(extension)) {
             throw new IllegalArgumentException("Client uploads must be normalized .ogg audio.");
         }
-
         String uploadName = sanitizeSongName(payload.uploadName());
-        String fileName = sanitizeFileName(uploadName + "." + extension);
+        String fileName = normalizedUploadedFileName(sourceFileName);
         Path folder = uploadFolder(player);
         Path temp = folder.resolve(fileName + ".upload").normalize();
         if (!temp.startsWith(importRoot)) {
@@ -1315,6 +1314,8 @@ public final class MusicLibraryService {
     }
 
     private void markDeleted(MusicEntry entry) {
+        stopPlaybackForEntry(entry.musicId);
+        deleteEntryFiles(entry);
         entry.status = MusicStatus.DELETED;
         saveIndex();
         syncAllPlayers();
@@ -1649,6 +1650,23 @@ public final class MusicLibraryService {
         deleteEntryFile(importRoot, entry.safeRelativePath);
         deleteEntryFile(normalizedRoot, entry.normalizedRelativePath);
         deleteEntryFile(normalizedRoot, entry.previewRelativePath);
+        deleteReusableUploadedFile(entry);
+    }
+
+    private void deleteReusableUploadedFile(MusicEntry entry) {
+        if (entry.ownerUuid == null || entry.ownerUuid.isBlank() || entry.originalFileName == null || entry.originalFileName.isBlank()) {
+            return;
+        }
+        try {
+            UUID ownerUuid = UUID.fromString(entry.ownerUuid);
+            Path ownerUploadFolder = uploadFolder(ownerUuid);
+            Path uploadedFile = ownerUploadFolder.resolve(entry.originalFileName).normalize();
+            if (uploadedFile.startsWith(ownerUploadFolder)) {
+                Files.deleteIfExists(uploadedFile);
+            }
+        } catch (IllegalArgumentException | IOException exception) {
+            Musicxcst.LOGGER.debug("Failed to delete reusable uploaded music file for entry '{}': {}", entry.musicId, exception.getMessage());
+        }
     }
 
     private void deleteEntryFile(Path root, String relativePath) {
@@ -1848,7 +1866,11 @@ public final class MusicLibraryService {
     }
 
     private Path uploadFolder(ServerPlayer player) {
-        return importRoot.resolve("client-uploads").resolve(player.getUUID().toString()).normalize();
+        return uploadFolder(player.getUUID());
+    }
+
+    private Path uploadFolder(UUID ownerUuid) {
+        return importRoot.resolve("client-uploads").resolve(ownerUuid.toString()).normalize();
     }
 
     private Path uploadedMusicPath(ServerPlayer player, String uploadedFileName) {
@@ -1913,6 +1935,13 @@ public final class MusicLibraryService {
             sanitized = base.substring(0, Math.min(base.length(), maxBaseLength)) + extension;
         }
         return sanitized;
+    }
+
+    private String normalizedUploadedFileName(String sourceFileName) {
+        String sanitized = sanitizeFileName(sourceFileName);
+        int dot = sanitized.lastIndexOf('.');
+        String baseName = dot > 0 ? sanitized.substring(0, dot) : sanitized;
+        return sanitizeFileName(sanitizeSongName(baseName) + ".ogg");
     }
 
     private long safeFileSize(Path path) {
