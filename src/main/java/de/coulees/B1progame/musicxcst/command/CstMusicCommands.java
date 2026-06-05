@@ -300,7 +300,7 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> field("Owner", entry.ownerName + " (" + entry.ownerUuid + ")", ChatFormatting.GRAY), false);
         source.sendSuccess(() -> field("Status", entry.status, statusColor(entry.status)), false);
         source.sendSuccess(() -> field("Color", entry.hexColor, ChatFormatting.LIGHT_PURPLE), false);
-        source.sendSuccess(() -> field("Import path", entry.safeRelativePath, ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> field("Stored audio", storedAudioPath(entry), ChatFormatting.GRAY), false);
         source.sendSuccess(() -> field("Created", Long.toString(entry.createdAtEpochMillis), ChatFormatting.GRAY), false);
         source.sendSuccess(() -> field("File size", entry.fileSizeBytes + " bytes", ChatFormatting.AQUA), false);
         source.sendSuccess(() -> field("SHA-256", entry.sha256, ChatFormatting.DARK_GRAY), false);
@@ -590,6 +590,16 @@ public final class CstMusicCommands {
             return entry.displayName;
         }
         return entry.musicId;
+    }
+
+    private static String storedAudioPath(MusicEntry entry) {
+        if (entry.normalizedRelativePath != null && !entry.normalizedRelativePath.isBlank()) {
+            return "normalized/" + entry.normalizedRelativePath;
+        }
+        if (entry.safeRelativePath != null && !entry.safeRelativePath.isBlank()) {
+            return entry.safeRelativePath;
+        }
+        return "-";
     }
 
     private static String displayName(MusicEntry entry) {

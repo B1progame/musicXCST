@@ -397,34 +397,21 @@ public final class MusicLibraryService {
         }
 
         String musicId = UUID.randomUUID().toString().replace("-", "");
-        Path ownerFolder = uploadFolder(player).resolve("created").normalize();
-        Path stored = ownerFolder.resolve(musicId + "-" + source.getFileName().toString()).normalize();
-        if (!stored.startsWith(importRoot)) {
-            throw new IllegalArgumentException("Upload destination escapes the import root.");
-        }
-
-        try {
-            Files.createDirectories(ownerFolder);
-            Files.copy(source, stored, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException exception) {
-            throw new IllegalArgumentException("Failed to store uploaded music file.", exception);
-        }
-
-        long fileSize = safeFileSize(stored);
-        validateFile(stored, fileSize);
+        long fileSize = safeFileSize(source);
+        validateFile(source, fileSize);
         validateQuota(player.getUUID(), fileSize);
-        NormalizedAudio normalizedAudio = normalizeAudio(player, stored, musicId, fileSize);
+        NormalizedAudio normalizedAudio = normalizeAudio(player, source, musicId, fileSize);
 
         MusicEntry entry = new MusicEntry();
         entry.musicId = musicId;
         entry.displayName = displayName;
         entry.originalFileName = source.getFileName().toString();
-        entry.safeRelativePath = importRoot.relativize(stored).toString().replace('\\', '/');
+        entry.safeRelativePath = "";
         entry.ownerUuid = player.getUUID().toString();
         entry.ownerName = player.getName().getString();
         entry.createdAtEpochMillis = Instant.now().toEpochMilli();
-        entry.fileSizeBytes = fileSize;
-        entry.sha256 = sha256(stored);
+        entry.fileSizeBytes = normalizedAudio.sizeBytes();
+        entry.sha256 = normalizedAudio.sha256();
         entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
