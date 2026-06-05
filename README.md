@@ -167,6 +167,8 @@ auto_delete_oldest
 block_new_upload
 ```
 
+Set `maxMusicFilesPerPlayerEnabled` to `true` before `maxMusicFilesPerPlayer` is enforced.
+
 ## Storage And Security
 
 MusicXCST stores audio metadata and normalized playback files on the server. Default storage locations are:

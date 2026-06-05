@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4
+
+Release for Minecraft `26.1.2` on Fabric.
+
+### Changed
+
+- `/cstmusic storage` now shows whether the per-player music file limit is enabled, the active file count, and the configured limit mode.
+- Per-player music file limits now count active tracks only, so missing, invalid, or deleted entries no longer block new uploads.
+
+### Fixed
+
+- Fixed `/cstmusic info` and `/cstmusic delete` without a music ID showing Minecraft's raw incomplete-command error instead of useful usage and the player's music list.
+
 ## 0.1.3
 
 Release for Minecraft `26.1.2` on Fabric.

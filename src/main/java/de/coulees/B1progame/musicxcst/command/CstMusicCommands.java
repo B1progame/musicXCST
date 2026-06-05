@@ -76,10 +76,12 @@ public final class CstMusicCommands {
                 .then(Commands.literal("list")
                         .executes(ctx -> listOwn(ctx.getSource())))
                 .then(Commands.literal("info")
+                        .executes(ctx -> infoUsage(ctx.getSource()))
                         .then(Commands.argument("musicId", StringArgumentType.word())
                                 .suggests(CstMusicCommands::suggestOwnMusicIds)
                                 .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
                 .then(Commands.literal("delete")
+                        .executes(ctx -> deleteUsage(ctx.getSource()))
                         .then(Commands.argument("musicId", StringArgumentType.word())
                                 .suggests(CstMusicCommands::suggestOwnMusicIds)
                                 .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), false))))
@@ -276,6 +278,11 @@ public final class CstMusicCommands {
         return 1;
     }
 
+    private static int infoUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        source.sendSuccess(() -> Component.literal("Usage: /cstmusic info <musicId>"), false);
+        return listOwn(source);
+    }
+
     private static int delete(CommandSourceStack source, String musicId, boolean adminScope) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         String result = adminScope
                 ? Musicxcst.LIBRARY.deleteEntryAsAdmin(source, musicId)
@@ -284,10 +291,16 @@ public final class CstMusicCommands {
         return 1;
     }
 
+    private static int deleteUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        source.sendSuccess(() -> Component.literal("Usage: /cstmusic delete <musicId>"), false);
+        return listOwn(source);
+    }
+
     private static int storage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         StorageStats own = Musicxcst.LIBRARY.getPlayerStorage(player);
         source.sendSuccess(() -> Component.literal("Your storage: " + own.describe()), false);
+        source.sendSuccess(() -> Component.literal("Your file limit: " + Musicxcst.LIBRARY.describePlayerFileLimit(player)), false);
         if (isAdmin(source)) {
             source.sendSuccess(() -> Component.literal("Server storage: " + Musicxcst.LIBRARY.getServerStorage().describe()), false);
         }

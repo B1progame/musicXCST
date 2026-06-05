@@ -541,6 +541,17 @@ public final class MusicLibraryService {
         return stats;
     }
 
+    public String describePlayerFileLimit(ServerPlayer player) {
+        StorageStats stats = getPlayerStorage(player);
+        int activeFiles = stats.activeCount;
+        if (!config.maxMusicFilesPerPlayerEnabled) {
+            return activeFiles + " active file(s), limit disabled. Set maxMusicFilesPerPlayerEnabled=true to enforce maxMusicFilesPerPlayer.";
+        }
+
+        int limit = playerFileLimit();
+        return activeFiles + " / " + limit + " active file(s), mode=" + playerLimitMode() + ".";
+    }
+
     public StorageStats getServerStorage() {
         StorageStats stats = new StorageStats();
         stats.quotaBytes = config.maxTotalServerStorageBytes;
@@ -1597,7 +1608,7 @@ public final class MusicLibraryService {
         String owner = player.getUUID().toString();
         return entries.values().stream()
                 .filter(entry -> Objects.equals(entry.ownerUuid, owner))
-                .filter(entry -> !MusicStatus.DELETED.equals(entry.status))
+                .filter(entry -> MusicStatus.ACTIVE.equals(entry.status))
                 .sorted(Comparator.comparingLong(entry -> entry.createdAtEpochMillis))
                 .toList();
     }
