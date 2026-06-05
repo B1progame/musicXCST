@@ -5,6 +5,7 @@ import de.coulees.B1progame.musicxcst.client.ClientMusicUploader;
 import de.coulees.B1progame.musicxcst.data.DiscData;
 import de.coulees.B1progame.musicxcst.menu.CdWriterMenu;
 import de.coulees.B1progame.musicxcst.network.CdWriterWritePayload;
+import de.coulees.B1progame.musicxcst.network.UploadedMusicListRequestPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -37,7 +38,9 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Locale;
@@ -61,6 +64,11 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private static final int FILE_BUTTON_Y = 35;
     private static final int FILE_BUTTON_WIDTH = 20;
     private static final int FILE_BUTTON_HEIGHT = 20;
+    private static final int UPLOADED_SUGGESTION_X = 14;
+    private static final int UPLOADED_SUGGESTION_Y = 59;
+    private static final int UPLOADED_SUGGESTION_WIDTH = 164;
+    private static final int UPLOADED_SUGGESTION_HEIGHT = 10;
+    private static final int MAX_VISIBLE_UPLOADED_SUGGESTIONS = 3;
     private static final int DESIGN_PANEL_X = 9;
     private static final int DESIGN_PANEL_Y = 71;
     private static final int DESIGN_PANEL_WIDTH = 88;
@@ -123,6 +131,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
     private long editorExpiresAtMillis;
     private String lastInputDesignKey = "";
     private int pressedTextureButton = PRESSED_NONE;
+    private List<String> uploadedMusicFiles = List.of();
 
     public CdWriterScreen(CdWriterMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title, GUI_WIDTH, GUI_HEIGHT);
@@ -158,6 +167,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         if (this.designIdBox.getValue().isBlank()) {
             updateDesignIdBox();
         }
+        requestUploadedMusicFiles();
 
         setInitialFocus(this.nameBox);
         this.nameBox.setFocused(true);
@@ -182,6 +192,7 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         if (uploading) {
             guiGraphics.centeredText(this.font, progressText.isBlank() ? loadingText() : progressText, leftPos + GUI_WIDTH / 2, topPos - 13, 0xFFFFE680);
         }
+        renderUploadedSuggestions(guiGraphics);
         guiGraphics.blit(RenderPipelines.GUI_TEXTURED, PRINT_BUTTON_TEXTURE, leftPos + PRINT_BUTTON_X, topPos + PRINT_BUTTON_Y, 0, 0, PRINT_BUTTON_WIDTH, PRINT_BUTTON_HEIGHT, PRINT_BUTTON_WIDTH, PRINT_BUTTON_HEIGHT);
     }
 
@@ -192,6 +203,9 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         pressedTextureButton = PRESSED_NONE;
         if (inside(x, y, FILE_BUTTON_X, FILE_BUTTON_Y, FILE_BUTTON_WIDTH, FILE_BUTTON_HEIGHT)) {
             openFilePicker();
+            return true;
+        }
+        if (handleUploadedSuggestionClick(x, y)) {
             return true;
         }
         if (x >= PRINT_BUTTON_X && x <= PRINT_BUTTON_X + PRINT_BUTTON_WIDTH && y >= PRINT_BUTTON_Y && y <= PRINT_BUTTON_Y + PRINT_BUTTON_HEIGHT) {
@@ -268,7 +282,12 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
             uploading = false;
             progressText = "";
             SAVED_STATES.remove(pos);
+            requestUploadedMusicFiles();
         }
+    }
+
+    public void updateUploadedMusicFiles(List<String> fileNames) {
+        uploadedMusicFiles = List.copyOf(fileNames == null ? List.of() : fileNames);
     }
 
     @Override
@@ -302,12 +321,23 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         }
 
         uploading = true;
-        progressText = "Starting upload...";
+        progressText = "Starting...";
         Minecraft client = Minecraft.getInstance();
         int[] payloadDesign = designForWrite();
         Musicxcst.LOGGER.debug("CD Writer client sending design {}", DiscData.designDebugSummary(payloadDesign));
-        int started = ClientMusicUploader.startUpload(client, name, path, uploadedFileName ->
-                ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileName, payloadDesign)), progress -> this.progressText = progress);
+        String uploadedFileName = matchingUploadedMusicFile(path);
+        if (uploadedFileName != null) {
+            progressText = "Writing uploaded music...";
+            ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileName, payloadDesign));
+            return;
+        }
+
+        progressText = "Starting upload...";
+        int started = ClientMusicUploader.startUpload(client, name, path, uploadedFileNameAfterUpload -> {
+            rememberUploadedMusicFile(uploadedFileNameAfterUpload);
+            setUploadedMusicSelection(uploadedFileNameAfterUpload);
+            ClientPlayNetworking.send(new CdWriterWritePayload(menu.pos(), name, hexColor(), uploadedFileNameAfterUpload, payloadDesign));
+        }, progress -> this.progressText = progress);
         if (started == 0) {
             uploading = false;
             progressText = "";
@@ -433,6 +463,86 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         System.arraycopy(sanitized, 0, discPixels, 0, discPixels.length);
         currentDesignId = DiscData.encodeDesignId(discPixels);
         updateDesignIdBox();
+    }
+
+    private void requestUploadedMusicFiles() {
+        if (ClientPlayNetworking.canSend(UploadedMusicListRequestPayload.TYPE)) {
+            ClientPlayNetworking.send(new UploadedMusicListRequestPayload());
+        }
+    }
+
+    private void renderUploadedSuggestions(GuiGraphicsExtractor guiGraphics) {
+        if (!shouldShowUploadedSuggestions()) {
+            return;
+        }
+        List<String> suggestions = uploadedSuggestions();
+        for (int index = 0; index < suggestions.size(); index++) {
+            int x = leftPos + UPLOADED_SUGGESTION_X;
+            int y = topPos + UPLOADED_SUGGESTION_Y + index * UPLOADED_SUGGESTION_HEIGHT;
+            guiGraphics.fill(x, y, x + UPLOADED_SUGGESTION_WIDTH, y + UPLOADED_SUGGESTION_HEIGHT, 0xEE111111);
+            guiGraphics.outline(x, y, UPLOADED_SUGGESTION_WIDTH, UPLOADED_SUGGESTION_HEIGHT, 0xFF5F7A8A);
+            drawScaled(guiGraphics, shortenFileName(suggestions.get(index), UPLOADED_SUGGESTION_WIDTH), x + 3, y + 2, 0.7F, 0xFFE7ECF5);
+        }
+    }
+
+    private boolean handleUploadedSuggestionClick(int x, int y) {
+        if (!shouldShowUploadedSuggestions()) {
+            return false;
+        }
+        List<String> suggestions = uploadedSuggestions();
+        for (int index = 0; index < suggestions.size(); index++) {
+            int suggestionY = UPLOADED_SUGGESTION_Y + index * UPLOADED_SUGGESTION_HEIGHT;
+            if (inside(x, y, UPLOADED_SUGGESTION_X, suggestionY, UPLOADED_SUGGESTION_WIDTH, UPLOADED_SUGGESTION_HEIGHT)) {
+                setUploadedMusicSelection(suggestions.get(index));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean shouldShowUploadedSuggestions() {
+        return pathBox != null && pathBox.canConsumeInput() && !uploadedMusicFiles.isEmpty();
+    }
+
+    private List<String> uploadedSuggestions() {
+        String query = pathBox.getValue().trim().toLowerCase(Locale.ROOT);
+        List<String> suggestions = new ArrayList<>();
+        for (String fileName : uploadedMusicFiles) {
+            if (query.isBlank() || fileName.toLowerCase(Locale.ROOT).contains(query)) {
+                suggestions.add(fileName);
+                if (suggestions.size() >= MAX_VISIBLE_UPLOADED_SUGGESTIONS) {
+                    break;
+                }
+            }
+        }
+        return suggestions;
+    }
+
+    private String matchingUploadedMusicFile(String value) {
+        String cleaned = value == null ? "" : value.trim();
+        for (String fileName : uploadedMusicFiles) {
+            if (fileName.equals(cleaned)) {
+                return fileName;
+            }
+        }
+        return null;
+    }
+
+    private void setUploadedMusicSelection(String fileName) {
+        selectedFile = null;
+        updatingPathBox = true;
+        pathBox.setValue(fileName);
+        updatingPathBox = false;
+    }
+
+    private void rememberUploadedMusicFile(String fileName) {
+        if (fileName == null || fileName.isBlank() || uploadedMusicFiles.contains(fileName)) {
+            return;
+        }
+        List<String> updated = new ArrayList<>(uploadedMusicFiles);
+        updated.add(fileName);
+        updated.sort(String::compareTo);
+        uploadedMusicFiles = List.copyOf(updated);
     }
 
     private void syncInputDiscDesign() {
@@ -893,6 +1003,14 @@ public final class CdWriterScreen extends AbstractContainerScreen<CdWriterMenu> 
         guiGraphics.pose().translate(centerX, y);
         guiGraphics.pose().scale(scale, scale);
         guiGraphics.text(this.font, text, Math.round(-width / 2.0F), 0, color, false);
+        guiGraphics.pose().popMatrix();
+    }
+
+    private void drawScaled(GuiGraphicsExtractor guiGraphics, String text, int x, int y, float scale, int color) {
+        guiGraphics.pose().pushMatrix();
+        guiGraphics.pose().translate(x, y);
+        guiGraphics.pose().scale(scale, scale);
+        guiGraphics.text(this.font, text, 0, 0, color, false);
         guiGraphics.pose().popMatrix();
     }
 

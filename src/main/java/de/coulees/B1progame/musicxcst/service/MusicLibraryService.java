@@ -31,6 +31,7 @@ import de.coulees.B1progame.musicxcst.network.JukeboxStopPayload;
 import de.coulees.B1progame.musicxcst.network.JukeboxVolumeUpdatePayload;
 import de.coulees.B1progame.musicxcst.network.MusicLimitConfirmPayload;
 import de.coulees.B1progame.musicxcst.network.MusicLimitConfirmResponsePayload;
+import de.coulees.B1progame.musicxcst.network.UploadedMusicListPayload;
 import de.coulees.B1progame.musicxcst.service.audio.AudioChunkDownloadManager;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackRangeTracker;
 import de.coulees.B1progame.musicxcst.service.audio.PlaybackSessionManager;
@@ -496,6 +497,13 @@ public final class MusicLibraryService {
         } catch (IOException exception) {
             Musicxcst.LOGGER.debug("Failed to list uploaded music files for {}: {}", player.getName().getString(), exception.getMessage());
             return List.of();
+        }
+    }
+
+    public void sendUploadedMusicList(ServerPlayer player) {
+        ensureServer();
+        if (ServerPlayNetworking.canSend(player, UploadedMusicListPayload.TYPE)) {
+            ServerPlayNetworking.send(player, new UploadedMusicListPayload(listUploadedFilesForPlayer(player)));
         }
     }
 
