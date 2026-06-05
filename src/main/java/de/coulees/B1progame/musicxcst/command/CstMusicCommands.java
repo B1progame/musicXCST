@@ -74,9 +74,7 @@ public final class CstMusicCommands {
                                                 StringArgumentType.getString(ctx, "path")
                                         )))))
                 .then(Commands.literal("list")
-                        .executes(ctx -> listOwn(ctx.getSource(), false))
-                        .then(Commands.literal("all")
-                                .executes(ctx -> listOwn(ctx.getSource(), true))))
+                        .executes(ctx -> listOwn(ctx.getSource(), false)))
                 .then(Commands.literal("info")
                         .executes(ctx -> infoUsage(ctx.getSource()))
                         .then(Commands.argument("musicRef", StringArgumentType.string())
@@ -150,7 +148,6 @@ public final class CstMusicCommands {
         source.sendSuccess(() -> Component.literal("  Supported files: mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi.").withStyle(ChatFormatting.YELLOW), false);
         source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
         sendCommandHelp(source, "/cstmusic list", "Show your available uploaded music names.");
-        sendCommandHelp(source, "/cstmusic list all", "Show your uploaded music names including deleted or missing entries.");
         sendCommandHelp(source, "/cstmusic info <uploadedFile>", "Show status, owner, file size, checksum, and color.");
         sendCommandHelp(source, "/cstmusic delete <uploadedFile>", "Delete one of your music entries.");
         sendCommandHelp(source, "/cstmusic storage", "Show your storage usage and server storage if you are admin.");
