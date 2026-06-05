@@ -1333,9 +1333,6 @@ public final class MusicLibraryService {
         if (matches.isEmpty()) {
             throw new IllegalArgumentException("Unknown uploaded music: " + cleanedReference);
         }
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException("Multiple active music entries use '" + cleanedReference + "'. Delete one by music ID from /cstmusic info.");
-        }
         return matches.get(0);
     }
 
