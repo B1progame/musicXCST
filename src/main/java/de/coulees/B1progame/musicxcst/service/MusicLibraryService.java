@@ -1176,10 +1176,12 @@ public final class MusicLibraryService {
     }
 
     private void accumulate(StorageStats stats, MusicEntry entry) {
-        stats.bytes += entry.fileSizeBytes;
         stats.fileCount++;
         switch (entry.status) {
-            case MusicStatus.ACTIVE -> stats.activeCount++;
+            case MusicStatus.ACTIVE -> {
+                stats.activeCount++;
+                stats.bytes += entry.fileSizeBytes;
+            }
             case MusicStatus.DELETED -> stats.deletedCount++;
             case MusicStatus.MISSING -> stats.missingCount++;
             default -> stats.invalidCount++;

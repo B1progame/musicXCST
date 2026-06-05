@@ -10,7 +10,7 @@ public final class StorageStats {
     public long quotaBytes;
 
     public String describe() {
-        return fileCount + " files, " + formatBytes(bytes) + " used";
+        return activeCount + " active disc(s), " + formatBytes(bytes) + " used";
     }
 
     public String describeDetailed() {

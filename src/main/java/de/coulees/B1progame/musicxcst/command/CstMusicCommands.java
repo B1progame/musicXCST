@@ -186,11 +186,38 @@ public final class CstMusicCommands {
                         .withHoverEvent(new HoverEvent.ShowText(Component.literal(tip))))), false);
     }
 
+    private static Component field(String label, String value, ChatFormatting valueColor) {
+        return Component.literal(label + ": ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(value).withStyle(valueColor));
+    }
+
+    private static Component entryLine(String primary, String discName, String status) {
+        return Component.literal("- ").withStyle(ChatFormatting.DARK_GRAY)
+                .append(Component.literal(primary).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(" | Disc: ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(Component.literal(discName).withStyle(ChatFormatting.GOLD))
+                .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(Component.literal(status).withStyle(statusColor(status)));
+    }
+
+    private static ChatFormatting statusColor(String status) {
+        if (MusicStatus.ACTIVE.equals(status)) {
+            return ChatFormatting.GREEN;
+        }
+        if (MusicStatus.DELETED.equals(status)) {
+            return ChatFormatting.DARK_GRAY;
+        }
+        if (MusicStatus.MISSING.equals(status)) {
+            return ChatFormatting.YELLOW;
+        }
+        return ChatFormatting.RED;
+    }
+
     private static int create(CommandSourceStack source, String name, String colorAndLocation) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         CreateArguments arguments = parseCreateTail(colorAndLocation);
         String result = Musicxcst.LIBRARY.createDiscForPlayer(source, player, name, arguments.hexColor(), arguments.location());
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> Component.literal(result).withStyle(ChatFormatting.GREEN), false);
         return 1;
     }
 
@@ -201,7 +228,7 @@ public final class CstMusicCommands {
 
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.createDiscFromUploadedFile(player, name, hexColor, uploadedFile);
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> Component.literal(result).withStyle(ChatFormatting.GREEN), false);
         return 1;
     }
 
@@ -212,7 +239,9 @@ public final class CstMusicCommands {
         }
 
         ServerPlayNetworking.send(player, new ClientMusicUploadRequestPayload(name, path));
-        source.sendSuccess(() -> Component.literal("Starting client upload for '" + name + "'."), false);
+        source.sendSuccess(() -> Component.literal("Starting client upload for '").withStyle(ChatFormatting.YELLOW)
+                .append(Component.literal(name).withStyle(ChatFormatting.GOLD))
+                .append(Component.literal("'.")), false);
         return 1;
     }
 
@@ -249,13 +278,13 @@ public final class CstMusicCommands {
         ServerPlayer player = source.getPlayerOrException();
         List<MusicEntry> entries = Musicxcst.LIBRARY.listEntriesForPlayer(player);
         if (entries.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("No music entries registered."), false);
+            source.sendSuccess(() -> Component.literal("No music entries registered.").withStyle(ChatFormatting.YELLOW), false);
             return 1;
         }
 
-        source.sendSuccess(() -> Component.literal("Your registered music uploads:"), false);
+        source.sendSuccess(() -> Component.literal("Your registered music uploads:").withStyle(ChatFormatting.GOLD), false);
         for (MusicEntry entry : entries) {
-            source.sendSuccess(() -> Component.literal("- " + playerReference(entry) + " | Disc: " + entry.displayName + " | " + entry.status), false);
+            source.sendSuccess(() -> entryLine(playerReference(entry), entry.displayName, entry.status), false);
         }
         return entries.size();
     }
@@ -265,21 +294,22 @@ public final class CstMusicCommands {
                 ? Musicxcst.LIBRARY.requireAdminVisibleEntry(source, musicRef)
                 : Musicxcst.LIBRARY.requirePlayerVisibleEntry(source.getPlayerOrException(), musicRef);
 
-        source.sendSuccess(() -> Component.literal("Music ID: " + entry.musicId), false);
-        source.sendSuccess(() -> Component.literal("Name: " + entry.displayName), false);
-        source.sendSuccess(() -> Component.literal("Owner: " + entry.ownerName + " (" + entry.ownerUuid + ")"), false);
-        source.sendSuccess(() -> Component.literal("Status: " + entry.status), false);
-        source.sendSuccess(() -> Component.literal("Color: " + entry.hexColor), false);
-        source.sendSuccess(() -> Component.literal("Import Path: " + entry.safeRelativePath), false);
-        source.sendSuccess(() -> Component.literal("Original Name: " + entry.originalFileName), false);
-        source.sendSuccess(() -> Component.literal("Created: " + entry.createdAtEpochMillis), false);
-        source.sendSuccess(() -> Component.literal("File Size: " + entry.fileSizeBytes + " bytes"), false);
-        source.sendSuccess(() -> Component.literal("SHA-256: " + entry.sha256), false);
+        source.sendSuccess(() -> field("Uploaded file", playerReference(entry), ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> field("Disc name", entry.displayName, ChatFormatting.GOLD), false);
+        source.sendSuccess(() -> field("Music ID", entry.musicId, ChatFormatting.DARK_GRAY), false);
+        source.sendSuccess(() -> field("Owner", entry.ownerName + " (" + entry.ownerUuid + ")", ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> field("Status", entry.status, statusColor(entry.status)), false);
+        source.sendSuccess(() -> field("Color", entry.hexColor, ChatFormatting.LIGHT_PURPLE), false);
+        source.sendSuccess(() -> field("Import path", entry.safeRelativePath, ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> field("Created", Long.toString(entry.createdAtEpochMillis), ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> field("File size", entry.fileSizeBytes + " bytes", ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> field("SHA-256", entry.sha256, ChatFormatting.DARK_GRAY), false);
         return 1;
     }
 
     private static int infoUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        source.sendSuccess(() -> Component.literal("Usage: /cstmusic info <uploadedFile>"), false);
+        source.sendSuccess(() -> Component.literal("Usage: ").withStyle(ChatFormatting.YELLOW)
+                .append(Component.literal("/cstmusic info <uploadedFile>").withStyle(ChatFormatting.AQUA)), false);
         return listOwn(source);
     }
 
@@ -287,22 +317,23 @@ public final class CstMusicCommands {
         String result = adminScope
                 ? Musicxcst.LIBRARY.deleteEntryAsAdmin(source, musicRef)
                 : Musicxcst.LIBRARY.deleteEntryAsOwner(source.getPlayerOrException(), musicRef);
-        source.sendSuccess(() -> Component.literal(result), true);
+        source.sendSuccess(() -> Component.literal(result).withStyle(ChatFormatting.GREEN), true);
         return 1;
     }
 
     private static int deleteUsage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        source.sendSuccess(() -> Component.literal("Usage: /cstmusic delete <uploadedFile>"), false);
+        source.sendSuccess(() -> Component.literal("Usage: ").withStyle(ChatFormatting.YELLOW)
+                .append(Component.literal("/cstmusic delete <uploadedFile>").withStyle(ChatFormatting.AQUA)), false);
         return listOwn(source);
     }
 
     private static int storage(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         StorageStats own = Musicxcst.LIBRARY.getPlayerStorage(player);
-        source.sendSuccess(() -> Component.literal("Your storage: " + own.describe()), false);
-        source.sendSuccess(() -> Component.literal("Your file limit: " + Musicxcst.LIBRARY.describePlayerFileLimit(player)), false);
+        source.sendSuccess(() -> field("Your storage", own.describe(), ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> field("Your file limit", Musicxcst.LIBRARY.describePlayerFileLimit(player), ChatFormatting.YELLOW), false);
         if (isAdmin(source)) {
-            source.sendSuccess(() -> Component.literal("Server storage: " + Musicxcst.LIBRARY.getServerStorage().describe()), false);
+            source.sendSuccess(() -> field("Server storage", Musicxcst.LIBRARY.getServerStorage().describe(), ChatFormatting.AQUA), false);
         }
         return 1;
     }
@@ -330,14 +361,14 @@ public final class CstMusicCommands {
 
     private static int adminStorage(CommandSourceStack source) {
         StorageStats stats = Musicxcst.LIBRARY.getServerStorage();
-        source.sendSuccess(() -> Component.literal("Server storage: " + stats.describeDetailed()), false);
+        source.sendSuccess(() -> field("Server storage", stats.describeDetailed(), ChatFormatting.AQUA), false);
         return 1;
     }
 
     private static int adminList(CommandSourceStack source, int page) {
         List<MusicEntry> entries = Musicxcst.LIBRARY.listAllEntries();
         if (entries.isEmpty()) {
-            source.sendSuccess(() -> Component.literal("No music entries registered."), false);
+            source.sendSuccess(() -> Component.literal("No music entries registered.").withStyle(ChatFormatting.YELLOW), false);
             return 1;
         }
 
@@ -346,10 +377,19 @@ public final class CstMusicCommands {
         int start = (clampedPage - 1) * PAGE_SIZE;
         int end = Math.min(entries.size(), start + PAGE_SIZE);
 
-        source.sendSuccess(() -> Component.literal("All entries page " + clampedPage + "/" + totalPages + ":"), false);
+        source.sendSuccess(() -> Component.literal("All entries page ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(clampedPage + "/" + totalPages).withStyle(ChatFormatting.AQUA))
+                .append(Component.literal(":")), false);
         for (int index = start; index < end; index++) {
             MusicEntry entry = entries.get(index);
-            source.sendSuccess(() -> Component.literal("- " + entry.musicId + " | " + entry.displayName + " | " + entry.ownerName + " | " + entry.status), false);
+            source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.DARK_GRAY)
+                    .append(Component.literal(entry.musicId).withStyle(ChatFormatting.DARK_GRAY))
+                    .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                    .append(Component.literal(displayName(entry)).withStyle(ChatFormatting.AQUA))
+                    .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                    .append(Component.literal(entry.ownerName).withStyle(ChatFormatting.GOLD))
+                    .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                    .append(Component.literal(entry.status).withStyle(statusColor(entry.status))), false);
         }
         return end - start;
     }
@@ -550,6 +590,14 @@ public final class CstMusicCommands {
             return entry.displayName;
         }
         return entry.musicId;
+    }
+
+    private static String displayName(MusicEntry entry) {
+        String uploaded = playerReference(entry);
+        if (entry.displayName == null || entry.displayName.isBlank() || entry.displayName.equals(uploaded)) {
+            return uploaded;
+        }
+        return uploaded + " / " + entry.displayName;
     }
 
     private record CreateArguments(String hexColor, String location) {
