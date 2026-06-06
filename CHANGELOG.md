@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.5
+
+Release for Minecraft `26.1.2` on Fabric.
+
+### Fixed
+
+- Fixed managed FFmpeg download using outdated SHA-256: The managed downloader was downloading the latest FFmpeg release but verifying it against a hardcoded old SHA value, causing verification failures. Now dynamically fetches the newest BtbN/FFmpeg-Builds release and verifies the archive using the checksum from that exact same release.
+- Fixed managed FFmpeg detection after installation: Installed FFmpeg was extracted to a `bin/` subdirectory containing ffmpeg.exe and all required runtime DLLs (avcodec, swscale, etc.), but the detection logic was looking for ffmpeg.exe in the root directory. This caused the CD Writer to always show the FFmpeg setup screen even after successful installation. Now correctly detects managed FFmpeg in the `bin/` subdirectory.
+
+### Changed
+
+- Improved managed FFmpeg installer: Extracts complete `bin/` directory with all runtime dependencies instead of just the executable, ensuring FFmpeg runs without missing DLL errors.
+- Managed FFmpeg now queries GitHub API for latest verified release instead of using a hardcoded moving URL.
+- Enhanced connection handling with timeouts and proper resource cleanup.
+- SHA-256 verification remains mandatory and is now tied to the actual downloaded release, not a stale hardcoded value.
+
 ## 0.1.4
 
 Release for Minecraft `26.1.2` on Fabric.
