@@ -44,7 +44,7 @@ public final class ManagedFfmpegProvider {
             return Optional.empty();
         }
 
-        Path executable = installDirectory(baseDirectory, platform.get()).resolve(platform.get().executableName()).normalize();
+        Path executable = installDirectory(baseDirectory, platform.get()).resolve("bin").resolve(platform.get().executableName()).normalize();
         if (!Files.isRegularFile(executable)) {
             return Optional.empty();
         }
