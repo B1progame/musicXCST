@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.6
+
+Release for Minecraft `26.1.2` on Fabric.
+
+### Added
+
+- Server is now operable without FFmpeg installed. When FFmpeg is not available the server accepts and operates on OGG Vorbis files only: duration probing, previews, and playback use a pure-Java OGG container probe and simple file-copy previews.
+
+### Changed
+
+- FFmpeg is now optional. Server-side transcoding will only run when an FFmpeg executable is available and configured. If server-side transcoding is requested but FFmpeg is missing, uploads requiring conversion are rejected with a clear message instructing to convert on the client or install FFmpeg.
+
+### Fixed
+
+- Added a robust OGG-only duration probe fallback to determine track duration when FFmpeg is absent.
+
+
 ## 0.1.5
 
 Release for Minecraft `26.1.2` on Fabric.

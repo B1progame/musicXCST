@@ -1796,8 +1796,9 @@ public final class MusicLibraryService {
 
         try {
             Files.createDirectories(folder);
-            if (ffmpegLocator.locate(server.getServerDirectory(), config).isPresent()) {
-                mediaTranscoder.createPreview(resolveFfmpegExecutable(), source, output, config, previewSeconds);
+            var ffmpegOpt = ffmpegLocator.locate(server.getServerDirectory(), config);
+            if (ffmpegOpt.isPresent()) {
+                mediaTranscoder.createPreview(ffmpegOpt.get(), source, output, config, previewSeconds);
             } else {
                 Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
             }
@@ -1808,7 +1809,11 @@ public final class MusicLibraryService {
     }
 
     private void runFfmpegNormalization(ServerPlayer player, Path source, Path output, long sourceSizeBytes) {
-        String ffmpeg = resolveFfmpegExecutable();
+        var ffmpegOpt = ffmpegLocator.locate(server.getServerDirectory(), config);
+        if (ffmpegOpt.isEmpty()) {
+            throw new IllegalArgumentException("Server-side transcoding is unavailable because FFmpeg is not installed. Convert the file to .ogg on the client or install/configure FFmpeg on the server.");
+        }
+        String ffmpeg = ffmpegOpt.get();
         mediaTranscoder.transcodeToOgg(ffmpeg, source, output, config, message -> player.sendOverlayMessage(Component.literal(message)));
         player.sendOverlayMessage(Component.literal("Blueprint CD audio is ready."));
     }
@@ -1820,18 +1825,92 @@ public final class MusicLibraryService {
 
     private long probeAudioDurationMillis(Path file) {
         var ffmpeg = ffmpegLocator.locate(server.getServerDirectory(), config);
-        if (ffmpeg.isEmpty()) {
-            return 0L;
+        if (ffmpeg.isPresent()) {
+            return mediaTranscoder.probeDurationMillis(ffmpeg.get(), file);
         }
-        return mediaTranscoder.probeDurationMillis(ffmpeg.get(), file);
+        // Fallback: try to probe OGG files without FFmpeg by parsing the container
+        String fname = file.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (fname.endsWith(".ogg")) {
+            long d = probeOggDurationMillis(file);
+            if (d > 0L) return d;
+        }
+        return 0L;
+    }
+
+    private long probeOggDurationMillis(Path file) {
+        try {
+            long fileSize = Files.size(file);
+            if (fileSize <= 0L) return 0L;
+
+            int headRead = (int) Math.min(64 * 1024, fileSize);
+            byte[] header = new byte[headRead];
+            try (InputStream is = Files.newInputStream(file)) {
+                int r = is.read(header);
+                if (r <= 0) return 0L;
+            }
+
+            byte[] vorbisBytes = "vorbis".getBytes(StandardCharsets.US_ASCII);
+            int idx = indexOf(header, vorbisBytes);
+            if (idx >= 0 && idx + 14 < header.length) {
+                // sample_rate is 4 bytes little-endian located after "vorbis" + 4(version) + 1(channels)
+                int srOffset = idx + 6 + 4 + 1; // idx + 11
+                if (srOffset + 3 < header.length) {
+                    int sampleRate = ((header[srOffset] & 0xFF))
+                            | ((header[srOffset + 1] & 0xFF) << 8)
+                            | ((header[srOffset + 2] & 0xFF) << 16)
+                            | ((header[srOffset + 3] & 0xFF) << 24);
+
+                    int tailRead = (int) Math.min(64 * 1024, fileSize);
+                    byte[] tail = new byte[tailRead];
+                    try (InputStream is2 = Files.newInputStream(file)) {
+                        long skip = Math.max(0L, fileSize - tailRead);
+                        is2.skip(skip);
+                        int r2 = is2.read(tail);
+                        if (r2 <= 0) return 0L;
+                    }
+
+                    int last = lastIndexOf(tail, new byte[]{'O', 'g', 'g', 'S'});
+                    if (last >= 0 && last + 14 < tail.length) {
+                        // granule position is 8 bytes little-endian at offset last+6
+                        long gp = 0L;
+                        for (int i = 0; i < 8; i++) {
+                            gp |= (long) (tail[last + 6 + i] & 0xFF) << (8 * i);
+                        }
+                        if (sampleRate > 0 && gp > 0) {
+                            return (gp * 1000L) / sampleRate;
+                        }
+                    }
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return 0L;
+    }
+
+    private static int indexOf(byte[] data, byte[] pattern) {
+        outer:
+        for (int i = 0; i <= data.length - pattern.length; i++) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private static int lastIndexOf(byte[] data, byte[] pattern) {
+        outer:
+        for (int i = data.length - pattern.length; i >= 0; i--) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
     }
 
     private long parseDurationMillis(String ffmpegOutput) {
         return MediaTranscoder.parseDurationMillis(ffmpegOutput);
-    }
-
-    private String resolveFfmpegExecutable() {
-        return ffmpegLocator.require(server.getServerDirectory(), config);
     }
 
     private boolean isFfmpegAvailable(String executable) {
