@@ -108,7 +108,20 @@ public final class ClientMusicUploader {
             long sizeBytes = Files.size(path);
             long started = System.currentTimeMillis();
             String serverFileName = uploadedFileName(Path.of(originalFileName));
-            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, serverFileName, sizeBytes));
+
+            long durationMillis = 0L;
+            String ext = AUDIO_VALIDATION.extension(path.getFileName().toString());
+            try {
+                var ffmpegOpt = FFMPEG_LOCATOR.locate(client.gameDirectory.toPath(), ClientFfmpegConfig.load(client));
+                if (ffmpegOpt.isPresent()) {
+                    durationMillis = MEDIA_TRANSCODER.probeDurationMillis(ffmpegOpt.get(), path);
+                } else if ("ogg".equals(ext)) {
+                    durationMillis = MediaTranscoder.probeOggDurationMillis(path);
+                }
+            } catch (Exception ignored) {
+            }
+
+            ClientPlayNetworking.send(new ClientMusicUploadStartPayload(uploadId, name, serverFileName, sizeBytes, durationMillis));
             try (var input = Files.newInputStream(path)) {
                 byte[] buffer = new byte[CHUNK_BYTES];
                 long offset = 0L;

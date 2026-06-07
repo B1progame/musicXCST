@@ -45,7 +45,9 @@ public final class MediaTranscoder {
         command.add(output.toString());
         run(command, "Transcoding audio", progress, TRANSCODE_TIMEOUT);
         try {
-            return new TranscodeResult(output, Files.size(output), 0L);
+            long size = Files.size(output);
+            long duration = probeDurationMillis(ffmpeg, output);
+            return new TranscodeResult(output, size, duration);
         } catch (IOException exception) {
             throw new IllegalArgumentException("Failed to read transcoded audio.", exception);
         }
@@ -65,6 +67,76 @@ public final class MediaTranscoder {
             Thread.currentThread().interrupt();
             return 0L;
         }
+    }
+
+    public static long probeOggDurationMillis(Path file) {
+        try {
+            long fileSize = Files.size(file);
+            if (fileSize <= 0L) return 0L;
+
+            int headRead = (int) Math.min(64 * 1024, fileSize);
+            byte[] header = new byte[headRead];
+            try (java.io.InputStream is = Files.newInputStream(file)) {
+                int r = is.read(header);
+                if (r <= 0) return 0L;
+            }
+
+            byte[] vorbisBytes = "vorbis".getBytes(StandardCharsets.US_ASCII);
+            int idx = indexOf(header, vorbisBytes);
+            if (idx >= 0 && idx + 14 < header.length) {
+                int srOffset = idx + 6 + 4 + 1; // idx + 11
+                if (srOffset + 3 < header.length) {
+                    int sampleRate = ((header[srOffset] & 0xFF))
+                            | ((header[srOffset + 1] & 0xFF) << 8)
+                            | ((header[srOffset + 2] & 0xFF) << 16)
+                            | ((header[srOffset + 3] & 0xFF) << 24);
+
+                    int tailRead = (int) Math.min(64 * 1024, fileSize);
+                    byte[] tail = new byte[tailRead];
+                    try (java.io.InputStream is2 = Files.newInputStream(file)) {
+                        long skip = Math.max(0L, fileSize - tailRead);
+                        is2.skip(skip);
+                        int r2 = is2.read(tail);
+                        if (r2 <= 0) return 0L;
+                    }
+
+                    int last = lastIndexOf(tail, new byte[]{'O', 'g', 'g', 'S'});
+                    if (last >= 0 && last + 14 < tail.length) {
+                        long gp = 0L;
+                        for (int i = 0; i < 8; i++) {
+                            gp |= (long) (tail[last + 6 + i] & 0xFF) << (8 * i);
+                        }
+                        if (sampleRate > 0 && gp > 0) {
+                            return (gp * 1000L) / sampleRate;
+                        }
+                    }
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return 0L;
+    }
+
+    private static int indexOf(byte[] data, byte[] pattern) {
+        outer:
+        for (int i = 0; i <= data.length - pattern.length; i++) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private static int lastIndexOf(byte[] data, byte[] pattern) {
+        outer:
+        for (int i = data.length - pattern.length; i >= 0; i--) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
     }
 
     public void createPreview(String ffmpeg, Path source, Path output, CstMusicConfig config, int previewSeconds) {

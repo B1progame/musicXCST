@@ -415,7 +415,24 @@ public final class MusicLibraryService {
         entry.normalizedRelativePath = normalizedAudio.safeRelativePath();
         entry.normalizedSizeBytes = normalizedAudio.sizeBytes();
         entry.normalizedSha256 = normalizedAudio.sha256();
-        entry.durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
+        // Prefer client-provided duration if available (written as a sidecar file next to uploaded OGG)
+        long durationMillis = 0L;
+        try {
+            Path uploaded = source;
+            Path meta = uploaded.resolveSibling(uploaded.getFileName().toString() + ".duration");
+            if (Files.isRegularFile(meta)) {
+                String s = Files.readString(meta, java.nio.charset.StandardCharsets.UTF_8).trim();
+                try {
+                    durationMillis = Long.parseLong(s);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        if (durationMillis <= 0L) {
+            durationMillis = probeAudioDurationMillis(resolvePlayableOggWithoutStatus(entry));
+        }
+        entry.durationMillis = durationMillis;
         validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
         entry.designId = DiscData.encodeDesignId(DiscData.sanitizeDesign(designPixels));
@@ -750,6 +767,7 @@ public final class MusicLibraryService {
                     fileName,
                     temp,
                     payload.sizeBytes(),
+                    payload.durationMillis(),
                     0L,
                     System.currentTimeMillis()
             ));
@@ -803,6 +821,14 @@ public final class MusicLibraryService {
         }
         try {
             Files.move(updated.tempPath(), finalPath, StandardCopyOption.REPLACE_EXISTING);
+            // Persist client-reported duration if provided
+            try {
+                if (upload.durationMillis() > 0L) {
+                    Path meta = finalPath.resolveSibling(finalPath.getFileName().toString() + ".duration");
+                    Files.writeString(meta, Long.toString(upload.durationMillis()), java.nio.charset.StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                }
+            } catch (IOException ignored) {
+            }
             player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.displayName() + "'. Use the CD Writer Print button to write it to a disc."));
         } catch (IOException exception) {
             deleteQuietly(updated.tempPath());
@@ -1831,82 +1857,10 @@ public final class MusicLibraryService {
         // Fallback: try to probe OGG files without FFmpeg by parsing the container
         String fname = file.getFileName().toString().toLowerCase(Locale.ROOT);
         if (fname.endsWith(".ogg")) {
-            long d = probeOggDurationMillis(file);
+            long d = MediaTranscoder.probeOggDurationMillis(file);
             if (d > 0L) return d;
         }
         return 0L;
-    }
-
-    private long probeOggDurationMillis(Path file) {
-        try {
-            long fileSize = Files.size(file);
-            if (fileSize <= 0L) return 0L;
-
-            int headRead = (int) Math.min(64 * 1024, fileSize);
-            byte[] header = new byte[headRead];
-            try (InputStream is = Files.newInputStream(file)) {
-                int r = is.read(header);
-                if (r <= 0) return 0L;
-            }
-
-            byte[] vorbisBytes = "vorbis".getBytes(StandardCharsets.US_ASCII);
-            int idx = indexOf(header, vorbisBytes);
-            if (idx >= 0 && idx + 14 < header.length) {
-                // sample_rate is 4 bytes little-endian located after "vorbis" + 4(version) + 1(channels)
-                int srOffset = idx + 6 + 4 + 1; // idx + 11
-                if (srOffset + 3 < header.length) {
-                    int sampleRate = ((header[srOffset] & 0xFF))
-                            | ((header[srOffset + 1] & 0xFF) << 8)
-                            | ((header[srOffset + 2] & 0xFF) << 16)
-                            | ((header[srOffset + 3] & 0xFF) << 24);
-
-                    int tailRead = (int) Math.min(64 * 1024, fileSize);
-                    byte[] tail = new byte[tailRead];
-                    try (InputStream is2 = Files.newInputStream(file)) {
-                        long skip = Math.max(0L, fileSize - tailRead);
-                        is2.skip(skip);
-                        int r2 = is2.read(tail);
-                        if (r2 <= 0) return 0L;
-                    }
-
-                    int last = lastIndexOf(tail, new byte[]{'O', 'g', 'g', 'S'});
-                    if (last >= 0 && last + 14 < tail.length) {
-                        // granule position is 8 bytes little-endian at offset last+6
-                        long gp = 0L;
-                        for (int i = 0; i < 8; i++) {
-                            gp |= (long) (tail[last + 6 + i] & 0xFF) << (8 * i);
-                        }
-                        if (sampleRate > 0 && gp > 0) {
-                            return (gp * 1000L) / sampleRate;
-                        }
-                    }
-                }
-            }
-        } catch (IOException ignored) {
-        }
-        return 0L;
-    }
-
-    private static int indexOf(byte[] data, byte[] pattern) {
-        outer:
-        for (int i = 0; i <= data.length - pattern.length; i++) {
-            for (int j = 0; j < pattern.length; j++) {
-                if (data[i + j] != pattern[j]) continue outer;
-            }
-            return i;
-        }
-        return -1;
-    }
-
-    private static int lastIndexOf(byte[] data, byte[] pattern) {
-        outer:
-        for (int i = data.length - pattern.length; i >= 0; i--) {
-            for (int j = 0; j < pattern.length; j++) {
-                if (data[i + j] != pattern[j]) continue outer;
-            }
-            return i;
-        }
-        return -1;
     }
 
     private long parseDurationMillis(String ffmpegOutput) {
@@ -2148,9 +2102,9 @@ public final class MusicLibraryService {
     private record PendingLimitConfirmation(CdWriterWritePayload payload) {
     }
 
-    private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String originalFileName, Path tempPath, long sizeBytes, long receivedBytes, long startedAtMillis) {
+    private record PendingClientUpload(String uploadId, UUID ownerUuid, String displayName, String originalFileName, Path tempPath, long sizeBytes, long durationMillis, long receivedBytes, long startedAtMillis) {
         private PendingClientUpload withReceivedBytes(long receivedBytes) {
-            return new PendingClientUpload(uploadId, ownerUuid, displayName, originalFileName, tempPath, sizeBytes, receivedBytes, startedAtMillis);
+            return new PendingClientUpload(uploadId, ownerUuid, displayName, originalFileName, tempPath, sizeBytes, durationMillis, receivedBytes, startedAtMillis);
         }
     }
 
