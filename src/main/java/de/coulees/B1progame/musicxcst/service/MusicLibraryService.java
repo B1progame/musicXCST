@@ -554,10 +554,18 @@ public final class MusicLibraryService {
     }
 
     public String describePlayerFileLimit(ServerPlayer player) {
+        return describePlayerFileLimit(player, false);
+    }
+
+    public String describePlayerFileLimit(ServerPlayer player, boolean isAdmin) {
         StorageStats stats = getPlayerStorage(player);
         int activeFiles = stats.activeCount;
         if (!config.maxMusicFilesPerPlayerEnabled) {
-            return activeFiles + " active file(s), limit disabled. Set maxMusicFilesPerPlayerEnabled=true to enforce maxMusicFilesPerPlayer.";
+            if (isAdmin) {
+                return activeFiles + " active file(s), limit disabled. Set maxMusicFilesPerPlayerEnabled=true to enforce maxMusicFilesPerPlayer.";
+            } else {
+                return activeFiles + " active file(s), limit disabled.";
+            }
         }
 
         int limit = playerFileLimit();

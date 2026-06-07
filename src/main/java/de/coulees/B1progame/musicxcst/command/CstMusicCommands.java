@@ -337,7 +337,7 @@ public final class CstMusicCommands {
         ServerPlayer player = source.getPlayerOrException();
         StorageStats own = Musicxcst.LIBRARY.getPlayerStorage(player);
         source.sendSuccess(() -> field("Your storage", own.describe(), ChatFormatting.AQUA), false);
-        source.sendSuccess(() -> field("Your file limit", Musicxcst.LIBRARY.describePlayerFileLimit(player), ChatFormatting.YELLOW), false);
+        source.sendSuccess(() -> field("Your file limit", Musicxcst.LIBRARY.describePlayerFileLimit(player, isAdmin(source)), ChatFormatting.YELLOW), false);
         if (isAdmin(source)) {
             source.sendSuccess(() -> field("Server storage", Musicxcst.LIBRARY.getServerStorage().describe(), ChatFormatting.AQUA), false);
         }
