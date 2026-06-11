@@ -8,13 +8,21 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-public record CdWriterWritePayload(BlockPos pos, String discName, String hexColor, String uploadedFileName, int[] designPixels) implements CustomPacketPayload {
+public record CdWriterWritePayload(BlockPos pos, String discName, String hexColor, String uploadedFileName,
+                                   String designId, int[] designPixels) implements CustomPacketPayload {
     public static final Type<CdWriterWritePayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "cd_writer_write"));
     public static final StreamCodec<RegistryFriendlyByteBuf, CdWriterWritePayload> CODEC = StreamCodec.ofMember(CdWriterWritePayload::write, CdWriterWritePayload::read);
     private static final int MAX_DESIGN_INTS = 1024;
 
     public CdWriterWritePayload {
-        designPixels = DiscData.sanitizeDesign(designPixels);
+        int[] sanitizedPixels = DiscData.sanitizeDesign(designPixels);
+        designPixels = sanitizedPixels;
+        DiscData.DesignData decoded = DiscData.decodeDesign(designId).orElse(DiscData.legacyDesignData(sanitizedPixels));
+        designId = DiscData.encodeDesignId(decoded);
+    }
+
+    public CdWriterWritePayload(BlockPos pos, String discName, String hexColor, String uploadedFileName, int[] designPixels) {
+        this(pos, discName, hexColor, uploadedFileName, DiscData.encodeDesignId(designPixels), designPixels);
     }
 
     private static CdWriterWritePayload read(RegistryFriendlyByteBuf buffer) {
@@ -23,6 +31,7 @@ public record CdWriterWritePayload(BlockPos pos, String discName, String hexColo
                 buffer.readUtf(96),
                 buffer.readUtf(16),
                 buffer.readUtf(128),
+                buffer.readUtf(DiscData.DESIGN_ID_MAX_LENGTH),
                 readDesignPixels(buffer)
         );
     }
@@ -32,6 +41,7 @@ public record CdWriterWritePayload(BlockPos pos, String discName, String hexColo
         buffer.writeUtf(discName, 96);
         buffer.writeUtf(hexColor, 16);
         buffer.writeUtf(uploadedFileName, 128);
+        buffer.writeUtf(designId, DiscData.DESIGN_ID_MAX_LENGTH);
         writeDesignPixels(buffer, designPixels);
     }
 

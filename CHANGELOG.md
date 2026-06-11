@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.8
+
+Release for Minecraft `26.1.2` on Fabric.
+
+### Added
+
+- Added high-resolution custom disc design support with new `MXC2` Design IDs for larger square canvases.
+- Added editor feedback after successful import with a blocking success overlay, progress bar, and auto-close countdown.
+- Added editor bootstrap loading so large custom designs reopen in the browser editor without hitting Windows URL length limits.
+- Added drag-and-drop reference-image loading in the Reference tab of the web editor.
+
+### Changed
+
+- Custom disc data now stores design width, height, format version, and editor/import metadata instead of assuming every design is fixed `16x16`.
+- CD Writer and custom item rendering now recognize larger design sizes, and the in-block preview can display normalized high-resolution designs.
+- Final PNG export in the web editor now follows the actual exported design size instead of always forcing `16x16`.
+- Blueprint CD renderer placement is now tunable per canvas size in code, making it easier to hand-adjust `16x16`, `32x32`, `64x64`, and `128x128` pixel scale/offset profiles.
+
+### Fixed
+
+- Fixed imported and editor-created custom disc designs falling back to inconsistent rendering paths.
+- Fixed the redesigned browser editor failing to reopen large designs because the full Design ID was being passed through the browser launch URL.
+- Fixed oversized `MXC2` Design IDs crashing item sync/world save NBT serialization by avoiding unsafe large Design ID strings in item stack data.
+- Fixed CD Writer status checks showing the wrong “place a Blueprint CD” message when the real blocker was the occupied output slot.
+- Fixed the Reference tab lacking the same image drag-and-drop workflow available in the import/convert area.
+
 ## 0.1.7
 
 Release for Minecraft `26.1.2` on Fabric.

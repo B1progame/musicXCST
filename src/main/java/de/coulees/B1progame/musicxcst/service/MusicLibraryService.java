@@ -374,14 +374,15 @@ public final class MusicLibraryService {
 
     public String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName) {
         ensureServer();
-        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, DiscData.defaultDesign(), player.getInventory().getSelectedItem(), null, false);
+        return createDiscFromUploadedFile(player, requestedName, requestedColor, uploadedFileName, DiscData.encodeDesignId(DiscData.defaultDesignData()), DiscData.defaultDesign(), player.getInventory().getSelectedItem(), null, false);
     }
 
-    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, int[] designPixels, ItemStack selected, @Nullable Runnable inventoryChanged, boolean skipPlayerFileLimit) {
+    private String createDiscFromUploadedFile(ServerPlayer player, String requestedName, String requestedColor, String uploadedFileName, String designId, int[] designPixels, ItemStack selected, @Nullable Runnable inventoryChanged, boolean skipPlayerFileLimit) {
         if (!skipPlayerFileLimit) {
             enforcePlayerFileLimitOrThrow(player);
         }
-        Musicxcst.LOGGER.debug("CD Writer server creating disc with design {}", DiscData.designDebugSummary(designPixels));
+        DiscData.DesignData design = DiscData.decodeDesign(designId).orElseGet(() -> DiscData.legacyDesignData(designPixels));
+        Musicxcst.LOGGER.debug("CD Writer server creating disc with design {}", DiscData.designDebugSummary(design));
         String displayName = sanitizeSongName(requestedName);
         String normalizedColor = normalizeHexColor(requestedColor);
         if (normalizedColor == null) {
@@ -436,7 +437,7 @@ public final class MusicLibraryService {
         entry.durationMillis = durationMillis;
         validateMusicDuration(entry.durationMillis);
         entry.status = MusicStatus.ACTIVE;
-        entry.designId = DiscData.encodeDesignId(DiscData.sanitizeDesign(designPixels));
+        entry.designId = DiscData.encodeDesignId(design);
         NormalizedAudio previewAudio = createPreviewAudio(player, entry);
         entry.previewRelativePath = previewAudio.safeRelativePath();
         entry.previewSizeBytes = previewAudio.sizeBytes();
@@ -450,8 +451,14 @@ public final class MusicLibraryService {
         saveIndex();
 
         DiscData data = DiscData.fromEntry(entry);
-        data.designPixels = DiscData.sanitizeDesign(designPixels);
-        data.designId = DiscData.encodeDesignId(data.designPixels);
+        data.designPixels = design.pixels().clone();
+        data.designWidth = design.width();
+        data.designHeight = design.height();
+        data.designFormatVersion = design.formatVersion();
+        data.designSourceMode = design.sourceMode();
+        data.customEditorCreated = design.customEditorCreated();
+        data.importedTexture = design.importedTexture();
+        data.designId = DiscData.encodeDesignId(design);
         if (selected.getCount() == 1) {
             DiscData.writeToStack(selected, data);
             DiscData writtenData = DiscData.fromStack(selected);
@@ -676,7 +683,7 @@ public final class MusicLibraryService {
             Musicxcst.LOGGER.debug("CD Writer server received payload design {}", DiscData.designDebugSummary(payload.designPixels()));
             blockEntity.setConverting(true);
             menu.setConverting(true);
-            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designPixels(), menu.inputStack(), menu::inputChanged, true);
+            String result = createDiscFromUploadedFile(player, payload.discName(), payload.hexColor(), payload.uploadedFileName(), payload.designId(), payload.designPixels(), menu.inputStack(), menu::inputChanged, true);
             menu.moveInputToOutput();
             DiscData outputData = DiscData.fromStack(menu.getSlot(CdWriterMenu.OUTPUT_SLOT).getItem());
             Musicxcst.LOGGER.debug("CD Writer server output slot after move {}", outputData == null ? "missing disc data" : DiscData.designDebugSummary(outputData.designPixels));

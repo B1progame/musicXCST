@@ -9,18 +9,25 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.DyedItemColor;
+
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 
 public final class DiscData {
     public static final int DESIGN_SIZE = 16;
     public static final int DESIGN_PIXELS = DESIGN_SIZE * DESIGN_SIZE;
+    public static final int MAX_DESIGN_SIZE = 128;
+    public static final int GUI_PREVIEW_RENDER_SIZE = 32;
+    public static final int MAX_ITEM_RENDER_SIZE = 128;
     public static final String DESIGN_ID_PREFIX = "MXC1:";
     private static final String BASE64_DESIGN_ID_PREFIX = "MXCST1.";
     private static final String LEGACY_DESIGN_ID_PREFIX = "MXC16.";
+    private static final String HIGH_RES_DESIGN_ID_PREFIX = "MXC2.";
     private static final String PALETTE_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-    public static final int DESIGN_ID_MAX_LENGTH = 1500;
+    public static final int DESIGN_ID_MAX_LENGTH = 100_000;
+    private static final int MAX_NBT_STRING_BYTES = 65_535;
     private static final int DESIGN_PAYLOAD_BYTES = 1 + DESIGN_PIXELS * Integer.BYTES;
     private static final Identifier VALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd");
     private static final Identifier INVALID_MODEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "blueprint_cd_invalid");
@@ -32,6 +39,12 @@ public final class DiscData {
     public String hexColor;
     public String designId;
     public int[] designPixels;
+    public int designWidth;
+    public int designHeight;
+    public int designFormatVersion;
+    public String designSourceMode;
+    public boolean customEditorCreated;
+    public boolean importedTexture;
     public String status;
     public int schemaVersion;
 
@@ -42,8 +55,7 @@ public final class DiscData {
         data.ownerUuid = entry.ownerUuid;
         data.ownerName = entry.ownerName;
         data.hexColor = entry.hexColor;
-        data.designPixels = decodeDesignId(entry.designId).orElseGet(DiscData::defaultDesign);
-        data.designId = encodeDesignId(data.designPixels);
+        applyDesign(data, decodeDesign(entry.designId).orElseGet(DiscData::defaultDesignData));
         data.status = entry.status;
         data.schemaVersion = entry.schemaVersion;
         return data;
@@ -67,16 +79,37 @@ public final class DiscData {
         data.ownerUuid = tag.getStringOr("ownerUuid", "");
         data.ownerName = tag.getStringOr("ownerName", "");
         data.hexColor = tag.getStringOr("hexColor", "");
-        String storedDesignId = tag.getStringOr("designId", "");
-        Optional<int[]> storedPixels = tag.getIntArray("designPixels");
-        if (storedPixels.isPresent() && storedPixels.get().length == DESIGN_PIXELS) {
-            data.designPixels = sanitizeDesign(storedPixels.get());
-        } else {
-        data.designPixels = decodeDesignId(storedDesignId).orElseGet(DiscData::defaultDesign);
-        }
-        data.designId = encodeDesignId(data.designPixels);
         data.status = tag.getStringOr("status", MusicStatus.INVALID);
         data.schemaVersion = tag.getIntOr("schemaVersion", Musicxcst.DISC_SCHEMA_VERSION);
+
+        String storedDesignId = tag.getStringOr("designId", "");
+        int storedWidth = tag.getIntOr("designWidth", DESIGN_SIZE);
+        int storedHeight = tag.getIntOr("designHeight", DESIGN_SIZE);
+        int storedFormatVersion = tag.getIntOr("designFormatVersion", 1);
+        String storedSourceMode = tag.getStringOr("designSourceMode", "");
+        boolean storedCustomEditor = tag.getBooleanOr("designCustomEditor", false);
+        boolean storedImported = tag.getBooleanOr("designImported", false);
+        Optional<int[]> storedPixels = tag.getIntArray("designPixels");
+        DesignData decoded = null;
+        if (storedPixels.isPresent()) {
+            decoded = sanitizeDesignData(new DesignData(
+                    storedWidth,
+                    storedHeight,
+                    storedPixels.get(),
+                    storedFormatVersion,
+                    storedSourceMode,
+                    storedCustomEditor,
+                    storedImported
+            ));
+            if (!isSupportedSize(decoded.width(), decoded.height()) || decoded.pixels().length != decoded.width() * decoded.height()) {
+                decoded = null;
+            }
+        }
+        if (decoded == null) {
+            decoded = decodeDesign(storedDesignId).orElseGet(DiscData::defaultDesignData);
+        }
+        applyDesign(data, decoded);
+        data.designId = encodeDesignId(data.design());
         return data.musicId.isBlank() ? null : data;
     }
 
@@ -88,10 +121,22 @@ public final class DiscData {
         tag.putString("ownerName", data.ownerName);
         boolean invalid = MusicStatus.isInvalidLike(data.status);
         tag.putString("hexColor", invalid ? "" : data.hexColor);
-        int[] sanitizedDesign = invalid ? defaultDesign() : sanitizeDesign(data.designPixels);
+
+        DesignData sanitizedDesign = invalid ? defaultDesignData() : sanitizeDesignData(data.design());
         Musicxcst.LOGGER.debug("DiscData.writeToStack design {}", designDebugSummary(sanitizedDesign));
-        tag.putString("designId", encodeDesignId(sanitizedDesign));
-        tag.putIntArray("designPixels", sanitizedDesign);
+        String encodedDesignId = encodeDesignId(sanitizedDesign);
+        if (canStoreDesignIdInNbt(encodedDesignId)) {
+            tag.putString("designId", encodedDesignId);
+        }
+        tag.putIntArray("designPixels", sanitizedDesign.pixels());
+        tag.putInt("designWidth", sanitizedDesign.width());
+        tag.putInt("designHeight", sanitizedDesign.height());
+        tag.putInt("designFormatVersion", sanitizedDesign.formatVersion());
+        if (!sanitizedDesign.sourceMode().isBlank()) {
+            tag.putString("designSourceMode", sanitizedDesign.sourceMode());
+        }
+        tag.putBoolean("designCustomEditor", sanitizedDesign.customEditorCreated());
+        tag.putBoolean("designImported", sanitizedDesign.importedTexture());
         tag.putString("status", data.status);
         tag.putInt("schemaVersion", data.schemaVersion);
 
@@ -99,6 +144,18 @@ public final class DiscData {
         stack.set(DataComponents.CUSTOM_NAME, buildHoverName(data));
         stack.set(DataComponents.DYED_COLOR, new DyedItemColor(renderColor(data)));
         stack.set(DataComponents.ITEM_MODEL, invalid ? INVALID_MODEL : VALID_MODEL);
+    }
+
+    public DesignData design() {
+        return sanitizeDesignData(new DesignData(
+                designWidth <= 0 ? DESIGN_SIZE : designWidth,
+                designHeight <= 0 ? DESIGN_SIZE : designHeight,
+                designPixels,
+                designFormatVersion <= 0 ? 1 : designFormatVersion,
+                designSourceMode == null ? "" : designSourceMode,
+                customEditorCreated,
+                importedTexture
+        ));
     }
 
     public static Component buildHoverName(DiscData data) {
@@ -131,6 +188,10 @@ public final class DiscData {
     }
 
     public static int[] defaultDesign() {
+        return defaultDesignData().pixels().clone();
+    }
+
+    public static DesignData defaultDesignData() {
         int[] pixels = new int[DESIGN_PIXELS];
         String[] rows = {
                 "................",
@@ -165,7 +226,7 @@ public final class DiscData {
                 };
             }
         }
-        return pixels;
+        return new DesignData(DESIGN_SIZE, DESIGN_SIZE, pixels, 1, "pixel", false, false);
     }
 
     public static int[] themedBlueprintDesign(int accentColor) {
@@ -193,16 +254,49 @@ public final class DiscData {
         return pixels;
     }
 
+    public static DesignData legacyDesignData(int[] pixels) {
+        return sanitizeDesignData(new DesignData(DESIGN_SIZE, DESIGN_SIZE, pixels, 1, "pixel", false, false));
+    }
+
+    public static DesignData sanitizeDesignData(DesignData design) {
+        if (design == null || !isSupportedSize(design.width(), design.height())) {
+            return defaultDesignData();
+        }
+        if (design.pixels() == null || design.pixels().length != design.width() * design.height()) {
+            return defaultDesignData();
+        }
+        int[] sanitized = new int[design.pixels().length];
+        for (int index = 0; index < sanitized.length; index++) {
+            sanitized[index] = sanitizeDesignPixel(design.pixels()[index]);
+        }
+        return new DesignData(
+                design.width(),
+                design.height(),
+                sanitized,
+                Math.max(1, design.formatVersion()),
+                normalizeSourceMode(design.sourceMode()),
+                design.customEditorCreated(),
+                design.importedTexture()
+        );
+    }
+
     public static int[] sanitizeDesign(int[] pixels) {
-        int[] sanitized = defaultDesign();
-        if (pixels == null || pixels.length != DESIGN_PIXELS) {
+        if (pixels == null) {
+            return defaultDesign();
+        }
+        if (pixels.length == DESIGN_PIXELS) {
+            int[] sanitized = new int[DESIGN_PIXELS];
+            for (int index = 0; index < pixels.length; index++) {
+                sanitized[index] = sanitizeDesignPixel(pixels[index]);
+            }
             return sanitized;
         }
 
-        for (int index = 0; index < pixels.length; index++) {
-            sanitized[index] = sanitizeDesignPixel(pixels[index]);
+        int size = squareSizeForLength(pixels.length);
+        if (size > 0 && isSupportedSize(size, size)) {
+            return downscaleNearest(pixels, size, size, DESIGN_SIZE, DESIGN_SIZE);
         }
-        return sanitized;
+        return defaultDesign();
     }
 
     public static int sanitizeDesignPixel(int pixel) {
@@ -210,20 +304,127 @@ public final class DiscData {
     }
 
     public static String designDebugSummary(int[] pixels) {
-        int[] sanitized = sanitizeDesign(pixels);
+        return designDebugSummary(legacyDesignData(pixels));
+    }
+
+    public static String designDebugSummary(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
         int opaque = 0;
         long checksum = 1125899906842597L;
-        for (int pixel : sanitized) {
+        for (int pixel : sanitized.pixels()) {
             if ((pixel >>> 24) != 0) {
                 opaque++;
             }
             checksum = checksum * 31L + pixel;
         }
-        return "size=" + sanitized.length + ", opaque=" + opaque + ", checksum=" + Long.toUnsignedString(checksum, 16);
+        return "size=" + sanitized.width() + "x" + sanitized.height() + ", pixels=" + sanitized.pixels().length + ", opaque=" + opaque + ", checksum=" + Long.toUnsignedString(checksum, 16);
     }
 
     public static String encodeDesignId(int[] pixels) {
-        return encodePaletteDesignId(pixels);
+        return encodePaletteDesignId(sanitizeDesign(pixels));
+    }
+
+    public static String encodeDesignId(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
+        if (sanitized.width() == DESIGN_SIZE && sanitized.height() == DESIGN_SIZE && sanitized.formatVersion() <= 1) {
+            return encodePaletteDesignId(sanitized.pixels());
+        }
+        return encodeHighResDesignId(sanitized);
+    }
+
+    public static Optional<DesignData> decodeDesign(String designId) {
+        if (designId == null) {
+            return Optional.empty();
+        }
+
+        String trimmed = designId.trim();
+        if (trimmed.length() > DESIGN_ID_MAX_LENGTH) {
+            return Optional.empty();
+        }
+        if (trimmed.startsWith(HIGH_RES_DESIGN_ID_PREFIX)) {
+            return decodeHighResDesignId(trimmed);
+        }
+        if (trimmed.startsWith(LEGACY_DESIGN_ID_PREFIX)) {
+            return decodeLegacyDesignId(trimmed).map(DiscData::legacyDesignData);
+        }
+        if (trimmed.startsWith(DESIGN_ID_PREFIX)) {
+            return decodePaletteDesignId(trimmed).map(DiscData::legacyDesignData);
+        }
+        if (!trimmed.startsWith(BASE64_DESIGN_ID_PREFIX)) {
+            return Optional.empty();
+        }
+
+        String encoded = trimmed.substring(BASE64_DESIGN_ID_PREFIX.length());
+        try {
+            byte[] bytes = Base64.getUrlDecoder().decode(encoded);
+            if (bytes.length != DESIGN_PAYLOAD_BYTES || (bytes[0] & 0xFF) != DESIGN_SIZE) {
+                return Optional.empty();
+            }
+
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            buffer.get();
+            int[] pixels = new int[DESIGN_PIXELS];
+            for (int index = 0; index < pixels.length; index++) {
+                pixels[index] = sanitizeDesignPixel(buffer.getInt());
+            }
+            return Optional.of(legacyDesignData(pixels));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
+    public static Optional<int[]> decodeDesignId(String designId) {
+        return decodeDesign(designId).map(DiscData::toLegacyPixels);
+    }
+
+    public static int[] toLegacyPixels(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
+        if (sanitized.width() == DESIGN_SIZE && sanitized.height() == DESIGN_SIZE) {
+            return sanitized.pixels().clone();
+        }
+        return downscaleNearest(sanitized.pixels(), sanitized.width(), sanitized.height(), DESIGN_SIZE, DESIGN_SIZE);
+    }
+
+    public static DesignData toItemRenderDesign(DesignData design) {
+        return resampleToMaxSize(design, MAX_ITEM_RENDER_SIZE);
+    }
+
+    public static DesignData toGuiPreviewDesign(DesignData design) {
+        return resampleToMaxSize(design, GUI_PREVIEW_RENDER_SIZE);
+    }
+
+    private static DesignData resampleToMaxSize(DesignData design, int maxSize) {
+        DesignData sanitized = sanitizeDesignData(design);
+        if (sanitized.width() <= maxSize && sanitized.height() <= maxSize) {
+            return sanitized;
+        }
+        return new DesignData(
+                maxSize,
+                maxSize,
+                downscaleNearest(sanitized.pixels(), sanitized.width(), sanitized.height(), maxSize, maxSize),
+                sanitized.formatVersion(),
+                sanitized.sourceMode(),
+                sanitized.customEditorCreated(),
+                sanitized.importedTexture()
+        );
+    }
+
+    public static boolean hasCustomDesign(DiscData data) {
+        return hasCustomDesign(data.design());
+    }
+
+    public static boolean hasCustomDesign(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
+        if (sanitized.width() != DESIGN_SIZE || sanitized.height() != DESIGN_SIZE) {
+            return true;
+        }
+        int[] defaults = defaultDesign();
+        for (int index = 0; index < DESIGN_PIXELS; index++) {
+            if (sanitized.pixels()[index] != defaults[index]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String encodeBase64DesignId(int[] pixels) {
@@ -277,42 +478,22 @@ public final class DiscData {
         return DESIGN_ID_PREFIX + header + ";" + body;
     }
 
-    public static Optional<int[]> decodeDesignId(String designId) {
-        if (designId == null) {
-            return Optional.empty();
+    private static String encodeHighResDesignId(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
+        byte[] sourceModeBytes = normalizeSourceMode(sanitized.sourceMode()).getBytes(StandardCharsets.UTF_8);
+        int metadataBytes = 1 + Short.BYTES + Short.BYTES + 1 + 1 + sourceModeBytes.length;
+        ByteBuffer buffer = ByteBuffer.allocate(metadataBytes + sanitized.pixels().length * Integer.BYTES);
+        buffer.put((byte) Math.max(2, sanitized.formatVersion()));
+        buffer.putShort((short) sanitized.width());
+        buffer.putShort((short) sanitized.height());
+        int flags = (sanitized.customEditorCreated() ? 1 : 0) | (sanitized.importedTexture() ? 2 : 0);
+        buffer.put((byte) flags);
+        buffer.put((byte) sourceModeBytes.length);
+        buffer.put(sourceModeBytes);
+        for (int pixel : sanitized.pixels()) {
+            buffer.putInt(pixel);
         }
-
-        String trimmed = designId.trim();
-        if (trimmed.length() > DESIGN_ID_MAX_LENGTH) {
-            return Optional.empty();
-        }
-        if (trimmed.startsWith(LEGACY_DESIGN_ID_PREFIX)) {
-            return decodeLegacyDesignId(trimmed);
-        }
-        if (trimmed.startsWith(DESIGN_ID_PREFIX)) {
-            return decodePaletteDesignId(trimmed);
-        }
-        if (!trimmed.startsWith(BASE64_DESIGN_ID_PREFIX)) {
-            return Optional.empty();
-        }
-
-        String encoded = trimmed.substring(BASE64_DESIGN_ID_PREFIX.length());
-        try {
-            byte[] bytes = Base64.getUrlDecoder().decode(encoded);
-            if (bytes.length != DESIGN_PAYLOAD_BYTES || (bytes[0] & 0xFF) != DESIGN_SIZE) {
-                return Optional.empty();
-            }
-
-            ByteBuffer buffer = ByteBuffer.wrap(bytes);
-            buffer.get();
-            int[] pixels = new int[DESIGN_PIXELS];
-            for (int index = 0; index < pixels.length; index++) {
-                pixels[index] = sanitizeDesignPixel(buffer.getInt());
-            }
-            return Optional.of(pixels);
-        } catch (IllegalArgumentException exception) {
-            return Optional.empty();
-        }
+        return HIGH_RES_DESIGN_ID_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
     }
 
     private static Optional<int[]> decodePaletteDesignId(String designId) {
@@ -383,6 +564,46 @@ public final class DiscData {
         }
     }
 
+    private static Optional<DesignData> decodeHighResDesignId(String designId) {
+        String encoded = designId.substring(HIGH_RES_DESIGN_ID_PREFIX.length());
+        try {
+            byte[] bytes = Base64.getUrlDecoder().decode(encoded);
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            if (buffer.remaining() < 1 + Short.BYTES + Short.BYTES + 1 + 1) {
+                return Optional.empty();
+            }
+            int formatVersion = buffer.get() & 0xFF;
+            int width = buffer.getShort() & 0xFFFF;
+            int height = buffer.getShort() & 0xFFFF;
+            int flags = buffer.get() & 0xFF;
+            int sourceModeLength = buffer.get() & 0xFF;
+            if (!isSupportedSize(width, height) || sourceModeLength > buffer.remaining()) {
+                return Optional.empty();
+            }
+            byte[] sourceModeBytes = new byte[sourceModeLength];
+            buffer.get(sourceModeBytes);
+            int expectedPixels = width * height;
+            if (buffer.remaining() != expectedPixels * Integer.BYTES) {
+                return Optional.empty();
+            }
+            int[] pixels = new int[expectedPixels];
+            for (int index = 0; index < pixels.length; index++) {
+                pixels[index] = sanitizeDesignPixel(buffer.getInt());
+            }
+            return Optional.of(sanitizeDesignData(new DesignData(
+                    width,
+                    height,
+                    pixels,
+                    Math.max(2, formatVersion),
+                    new String(sourceModeBytes, StandardCharsets.UTF_8),
+                    (flags & 1) != 0,
+                    (flags & 2) != 0
+            )));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
     private static int mix(int rgb, int other, float otherAmount) {
         float sourceAmount = 1.0F - otherAmount;
         int red = Math.round(((rgb >> 16) & 0xFF) * sourceAmount + ((other >> 16) & 0xFF) * otherAmount);
@@ -396,7 +617,7 @@ public final class DiscData {
             return 0xFFFFFF;
         }
 
-        Integer designColor = averageDesignColor(data.designPixels);
+        Integer designColor = averageDesignColor(data.design());
         if (designColor != null) {
             return designColor;
         }
@@ -405,14 +626,14 @@ public final class DiscData {
         return color != null ? color : 0x2C6DCC;
     }
 
-    private static Integer averageDesignColor(int[] pixels) {
-        int[] sanitized = sanitizeDesign(pixels);
+    private static Integer averageDesignColor(DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
         long red = 0L;
         long green = 0L;
         long blue = 0L;
         int count = 0;
 
-        for (int pixel : sanitized) {
+        for (int pixel : sanitized.pixels()) {
             if ((pixel >>> 24) != 0) {
                 red += (pixel >> 16) & 0xFF;
                 green += (pixel >> 8) & 0xFF;
@@ -425,5 +646,57 @@ public final class DiscData {
             return null;
         }
         return ((int) (red / count) << 16) | ((int) (green / count) << 8) | (int) (blue / count);
+    }
+
+    private static int[] downscaleNearest(int[] pixels, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight) {
+        int[] out = new int[targetWidth * targetHeight];
+        for (int y = 0; y < targetHeight; y++) {
+            int sourceY = Math.min(sourceHeight - 1, Math.round(((y + 0.5F) * sourceHeight) / targetHeight - 0.5F));
+            for (int x = 0; x < targetWidth; x++) {
+                int sourceX = Math.min(sourceWidth - 1, Math.round(((x + 0.5F) * sourceWidth) / targetWidth - 0.5F));
+                out[y * targetWidth + x] = sanitizeDesignPixel(pixels[sourceY * sourceWidth + sourceX]);
+            }
+        }
+        return out;
+    }
+
+    private static void applyDesign(DiscData data, DesignData design) {
+        DesignData sanitized = sanitizeDesignData(design);
+        data.designPixels = sanitized.pixels().clone();
+        data.designWidth = sanitized.width();
+        data.designHeight = sanitized.height();
+        data.designFormatVersion = sanitized.formatVersion();
+        data.designSourceMode = sanitized.sourceMode();
+        data.customEditorCreated = sanitized.customEditorCreated();
+        data.importedTexture = sanitized.importedTexture();
+        data.designId = encodeDesignId(sanitized);
+    }
+
+    private static boolean isSupportedSize(int width, int height) {
+        return width == height && (width == 16 || width == 32 || width == 64 || width == 128);
+    }
+
+    private static int squareSizeForLength(int length) {
+        int root = (int) Math.round(Math.sqrt(length));
+        return root * root == length ? root : -1;
+    }
+
+    private static String normalizeSourceMode(String sourceMode) {
+        if (sourceMode == null || sourceMode.isBlank()) {
+            return "";
+        }
+        String normalized = sourceMode.trim();
+        if (normalized.length() > 32) {
+            normalized = normalized.substring(0, 32);
+        }
+        return normalized;
+    }
+
+    private static boolean canStoreDesignIdInNbt(String designId) {
+        return designId != null && designId.length() <= MAX_NBT_STRING_BYTES;
+    }
+
+    public record DesignData(int width, int height, int[] pixels, int formatVersion, String sourceMode,
+                             boolean customEditorCreated, boolean importedTexture) {
     }
 }

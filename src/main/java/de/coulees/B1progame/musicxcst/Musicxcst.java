@@ -42,7 +42,7 @@ import org.slf4j.LoggerFactory;
 public final class Musicxcst implements ModInitializer {
     public static final String MOD_ID = "musicxcst";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-    public static final int DISC_SCHEMA_VERSION = 1;
+    public static final int DISC_SCHEMA_VERSION = 2;
     public static final String DISC_DATA_KEY = "musicxcst_disc";
     public static final MusicLibraryService LIBRARY = new MusicLibraryService();
 

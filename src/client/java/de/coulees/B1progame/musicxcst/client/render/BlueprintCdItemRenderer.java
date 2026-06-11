@@ -33,23 +33,17 @@ import java.util.Set;
 
 public final class BlueprintCdItemRenderer {
     private static final int MAX_CACHE_SIZE = 128;
-    // The overlay is baked from the base item model's own front/back face bounds.
-    // This offset only nudges those copied faces to avoid depth fighting without detaching the design.
     private static final float Z_FIGHT_OFFSET = 0.0001F;
-    // Normalized placement of the 16x16 editor design on the baked item face.
-    // The item model already applies the hand/inventory/ground transforms; these
-    // values only choose where the overlay lives inside that local item face.
     private static final float OVERLAY_MIN_U = 0.0F;
     private static final float OVERLAY_MAX_U = 1.0F;
     private static final float OVERLAY_MIN_V = 0.0F;
     private static final float OVERLAY_MAX_V = 1.0F;
-    // Makes isolated editor pixels readable at normal item size. 1.0 means each
-    // design pixel is exactly one 16x16 grid cell; higher values enlarge each
-    // colored cell around its own center while keeping it on the item face.
-    private static final float PIXEL_SIZE_SCALE = 8.0F;
-    // Offset in editor-grid pixels. Negative X moves left; positive Y moves down.
-    private static final float OVERLAY_OFFSET_X_PIXELS = 3.5F;
-    private static final float OVERLAY_OFFSET_Y_PIXELS = 3.5F;
+    // These profiles intentionally mimic the old 16x16 overlay feel.
+    // If you want to retune the look yourself, change the values here.
+    private static final PlacementProfile PROFILE_16 = new PlacementProfile(8.0F, 3.5F, 3.5F);
+    private static final PlacementProfile PROFILE_32 = new PlacementProfile(8.001F, 3.5F, 3.5F);
+    private static final PlacementProfile PROFILE_64 = new PlacementProfile(8.01F, 3.5F, 3.5F);
+    private static final PlacementProfile PROFILE_128 = new PlacementProfile(8.1F, 3.5F, 3.5F);
     private static final Identifier WHITE_PIXEL = Identifier.fromNamespaceAndPath(Musicxcst.MOD_ID, "custom_disc_pixel");
     private static final SpriteId WHITE_PIXEL_SPRITE = Sheets.ITEMS_MAPPER.apply(WHITE_PIXEL);
     private static final Set<String> LOGGED_CONTEXTS = new HashSet<>();
@@ -69,10 +63,7 @@ public final class BlueprintCdItemRenderer {
         }
 
         DiscData data = DiscData.fromStack(stack);
-        if (data == null) {
-            return;
-        }
-        if (MusicStatus.isInvalidLike(data.status)) {
+        if (data == null || MusicStatus.isInvalidLike(data.status) || !DiscData.hasCustomDesign(data)) {
             return;
         }
 
@@ -86,8 +77,9 @@ public final class BlueprintCdItemRenderer {
 
         ItemStackRenderState.LayerRenderState sourceLayer = layers[0];
         ItemStackLayerRenderStateAccessor source = (ItemStackLayerRenderStateAccessor) sourceLayer;
-        FaceBounds frontBounds = FaceBounds.from(sourceLayer.prepareQuadList(), Direction.SOUTH);
-        FaceBounds backBounds = FaceBounds.from(sourceLayer.prepareQuadList(), Direction.NORTH);
+        List<BakedQuad> sourceQuads = sourceLayer.prepareQuadList();
+        FaceBounds frontBounds = FaceBounds.from(sourceQuads, Direction.SOUTH);
+        FaceBounds backBounds = FaceBounds.from(sourceQuads, Direction.NORTH);
         if (frontBounds == null && backBounds == null) {
             Musicxcst.LOGGER.debug("Blueprint CD renderer found no base item front/back quads for {}", displayContext);
             return;
@@ -95,14 +87,16 @@ public final class BlueprintCdItemRenderer {
         FaceBounds overlayFrontBounds = frontBounds == null ? null : frontBounds.overlayFace();
         FaceBounds overlayBackBounds = backBounds == null ? null : backBounds.overlayFace();
 
-        int[] pixels = pixelsForRender(data);
-        String cacheKey = (data.status == null ? "" : data.status) + ":" + DiscData.encodeDesignId(pixels) + ":placement=" + placementKey() + ":front=" + cacheKey(overlayFrontBounds) + ":back=" + cacheKey(overlayBackBounds);
-        CachedDesign cached = CACHE.computeIfAbsent(cacheKey, ignored -> bake(pixels, overlayFrontBounds, overlayBackBounds));
+        DiscData.DesignData renderDesign = renderDesign(data);
+        String cacheKey = (data.status == null ? "" : data.status) + ":" + DiscData.encodeDesignId(renderDesign) + ":placement=" + placementKey(renderDesign) + ":front=" + cacheKey(overlayFrontBounds) + ":back=" + cacheKey(overlayBackBounds);
+        CachedDesign cached = CACHE.computeIfAbsent(cacheKey, ignored -> bake(renderDesign, overlayFrontBounds, overlayBackBounds));
         if (cached.quads().isEmpty()) {
+            sourceQuads.clear();
             return;
         }
 
-        logContextOnce(displayContext, data);
+        sourceQuads.clear();
+        logContextOnce(displayContext, renderDesign);
         ItemStackRenderState.LayerRenderState layer = renderState.newLayer();
         layer.setItemTransform(source.musicxcst$getItemTransform());
         layer.setLocalTransform(source.musicxcst$getLocalTransform());
@@ -118,8 +112,8 @@ public final class BlueprintCdItemRenderer {
         renderState.appendModelIdentityElement(cacheKey);
     }
 
-    private static CachedDesign bake(int[] pixels, FaceBounds frontBounds, FaceBounds backBounds) {
-        int[] sanitized = DiscData.sanitizeDesign(pixels);
+    private static CachedDesign bake(DiscData.DesignData design, FaceBounds frontBounds, FaceBounds backBounds) {
+        DiscData.DesignData sanitized = DiscData.sanitizeDesignData(design);
         TextureAtlasSprite sprite = Minecraft.getInstance()
                 .getAtlasManager()
                 .get(WHITE_PIXEL_SPRITE);
@@ -129,9 +123,9 @@ public final class BlueprintCdItemRenderer {
         List<BakedQuad> quads = new ArrayList<>();
         List<Integer> tints = new ArrayList<>();
 
-        for (int y = 0; y < DiscData.DESIGN_SIZE; y++) {
-            for (int x = 0; x < DiscData.DESIGN_SIZE; x++) {
-                int color = sanitized[y * DiscData.DESIGN_SIZE + x];
+        for (int y = 0; y < sanitized.height(); y++) {
+            for (int x = 0; x < sanitized.width(); x++) {
+                int color = sanitized.pixels()[y * sanitized.width() + x];
                 if ((color >>> 24) == 0) {
                     continue;
                 }
@@ -139,31 +133,36 @@ public final class BlueprintCdItemRenderer {
                 int tintIndex = tints.size();
                 tints.add(color);
                 if (frontBounds != null) {
-                    quads.add(pixelQuad(material, frontBounds, x, y, tintIndex, Direction.SOUTH));
+                    quads.add(pixelQuad(material, frontBounds, sanitized, x, y, tintIndex, Direction.SOUTH));
                 }
                 if (backBounds != null) {
-                    quads.add(pixelQuad(material, backBounds, x, y, tintIndex, Direction.NORTH));
+                    quads.add(pixelQuad(material, backBounds, sanitized, x, y, tintIndex, Direction.NORTH));
                 }
             }
         }
 
         int[] tintArray = tints.stream().mapToInt(Integer::intValue).toArray();
         Musicxcst.LOGGER.debug("Blueprint CD item-layer baked quads={} tintEntries={} firstTints={}", quads.size(), tintArray.length, firstVisiblePixels(tintArray));
-        return new CachedDesign(List.copyOf(quads), tintArray, extents(frontBounds, backBounds), material);
+        return new CachedDesign(List.copyOf(quads), tintArray, extents(sanitized, frontBounds, backBounds), material);
     }
 
-    private static BakedQuad pixelQuad(Material.Baked material, FaceBounds bounds, int x, int y, int tintIndex, Direction direction) {
+    private static BakedQuad pixelQuad(Material.Baked material, FaceBounds bounds, DiscData.DesignData design, int x, int y, int tintIndex, Direction direction) {
         TextureAtlasSprite sprite = material.sprite();
-        float pixelWidth = bounds.width() / DiscData.DESIGN_SIZE;
-        float pixelHeight = bounds.height() / DiscData.DESIGN_SIZE;
-        float centerX = bounds.minX() + (x + 0.5F + OVERLAY_OFFSET_X_PIXELS) * pixelWidth;
-        float centerY = bounds.maxY() - (y + 0.5F + OVERLAY_OFFSET_Y_PIXELS) * pixelHeight;
-        float halfWidth = pixelWidth * PIXEL_SIZE_SCALE * 0.5F;
-        float halfHeight = pixelHeight * PIXEL_SIZE_SCALE * 0.5F;
-        float x0 = centerX - halfWidth;
-        float x1 = centerX + halfWidth;
-        float y0 = centerY - halfHeight;
-        float y1 = centerY + halfHeight;
+        PlacementProfile placement = placementFor(design);
+        float x0;
+        float x1;
+        float y0;
+        float y1;
+        float pixelWidth = bounds.width() / design.width();
+        float pixelHeight = bounds.height() / design.height();
+        float centerX = bounds.minX() + (x + 0.5F + placement.offsetXPixels()) * pixelWidth;
+        float centerY = bounds.maxY() - (y + 0.5F + placement.offsetYPixels()) * pixelHeight;
+        float halfWidth = pixelWidth * placement.pixelScale() * 0.5F;
+        float halfHeight = pixelHeight * placement.pixelScale() * 0.5F;
+        x0 = centerX - halfWidth;
+        x1 = centerX + halfWidth;
+        y0 = centerY - halfHeight;
+        y1 = centerY + halfHeight;
         float z = direction == Direction.NORTH ? bounds.z() - Z_FIGHT_OFFSET : bounds.z() + Z_FIGHT_OFFSET;
         Vector3fc p0 = new Vector3f(x0, y0, z);
         Vector3fc p1 = new Vector3f(x1, y0, z);
@@ -180,18 +179,22 @@ public final class BlueprintCdItemRenderer {
         return new BakedQuad(p0, p1, p2, p3, uv0, uv1, uv2, uv3, direction, materialInfo);
     }
 
-    private static int[] pixelsForRender(DiscData data) {
-        return DiscData.sanitizeDesign(data.designPixels);
+    private static DiscData.DesignData renderDesign(DiscData data) {
+        DiscData.DesignData design = data.design();
+        if (design.width() == DiscData.DESIGN_SIZE && design.height() == DiscData.DESIGN_SIZE) {
+            return DiscData.sanitizeDesignData(design);
+        }
+        return DiscData.toItemRenderDesign(design);
     }
 
-    private static void logContextOnce(ItemDisplayContext displayContext, DiscData data) {
-        String key = displayContext.name() + ":" + DiscData.encodeDesignId(data.designPixels);
+    private static void logContextOnce(ItemDisplayContext displayContext, DiscData.DesignData design) {
+        String key = displayContext.name() + ":" + DiscData.encodeDesignId(design);
         if (LOGGED_CONTEXTS.add(key)) {
-            Musicxcst.LOGGER.debug("Blueprint CD item-layer renderer received {} design {}", displayContext, DiscData.designDebugSummary(data.designPixels));
+            Musicxcst.LOGGER.debug("Blueprint CD item-layer renderer received {} design {}", displayContext, DiscData.designDebugSummary(design));
         }
     }
 
-    private static void logBakeDiagnostics(int[] sanitized, TextureAtlasSprite sprite, Material.Baked material, FaceBounds frontBounds, FaceBounds backBounds) {
+    private static void logBakeDiagnostics(DiscData.DesignData sanitized, TextureAtlasSprite sprite, Material.Baked material, FaceBounds frontBounds, FaceBounds backBounds) {
         Identifier resolvedName = sprite.contents().name();
         boolean missing = MissingTextureAtlasSprite.getLocation().equals(resolvedName);
         boolean itemAtlas = TextureAtlas.LOCATION_ITEMS.equals(sprite.atlasLocation());
@@ -200,7 +203,7 @@ public final class BlueprintCdItemRenderer {
                 DiscData.designDebugSummary(sanitized),
                 cacheKey(frontBounds),
                 cacheKey(backBounds),
-                PIXEL_SIZE_SCALE,
+                placementFor(sanitized).pixelScale(),
                 WHITE_PIXEL,
                 WHITE_PIXEL_SPRITE,
                 resolvedName,
@@ -211,7 +214,7 @@ public final class BlueprintCdItemRenderer {
                 missing,
                 sprite.transparency(),
                 material.forceTranslucent(),
-                firstVisiblePixels(sanitized)
+                firstVisiblePixels(sanitized.pixels())
         );
     }
 
@@ -241,13 +244,14 @@ public final class BlueprintCdItemRenderer {
         return bounds == null ? "none" : bounds.cacheKey();
     }
 
-    private static String placementKey() {
-        return PIXEL_SIZE_SCALE + "," + OVERLAY_OFFSET_X_PIXELS + "," + OVERLAY_OFFSET_Y_PIXELS;
+    private static String placementKey(DiscData.DesignData design) {
+        PlacementProfile placement = placementFor(design);
+        return design.width() + "x" + design.height() + "," + placement.pixelScale() + "," + placement.offsetXPixels() + "," + placement.offsetYPixels();
     }
 
-    private static Vector3fc[] extents(FaceBounds frontBounds, FaceBounds backBounds) {
-        FaceBounds primary = (frontBounds != null ? frontBounds : backBounds).expandedForOverlay();
-        FaceBounds secondary = (backBounds != null ? backBounds : frontBounds).expandedForOverlay();
+    private static Vector3fc[] extents(DiscData.DesignData design, FaceBounds frontBounds, FaceBounds backBounds) {
+        FaceBounds primary = (frontBounds != null ? frontBounds : backBounds).expandedForOverlay(design);
+        FaceBounds secondary = (backBounds != null ? backBounds : frontBounds).expandedForOverlay(design);
         return new Vector3fc[]{
                 new Vector3f(Math.min(primary.minX(), secondary.minX()), Math.min(primary.minY(), secondary.minY()), Math.min(primary.z(), secondary.z()) - Z_FIGHT_OFFSET),
                 new Vector3f(Math.max(primary.maxX(), secondary.maxX()), Math.max(primary.maxY(), secondary.maxY()), Math.max(primary.z(), secondary.z()) + Z_FIGHT_OFFSET)
@@ -307,19 +311,33 @@ public final class BlueprintCdItemRenderer {
             );
         }
 
-        private FaceBounds expandedForOverlay() {
-            float pixelWidth = width() / DiscData.DESIGN_SIZE;
-            float pixelHeight = height() / DiscData.DESIGN_SIZE;
-            float halfWidth = pixelWidth * PIXEL_SIZE_SCALE * 0.5F;
-            float halfHeight = pixelHeight * PIXEL_SIZE_SCALE * 0.5F;
-            float left = minX + (0.5F + OVERLAY_OFFSET_X_PIXELS) * pixelWidth - halfWidth;
-            float right = minX + (DiscData.DESIGN_SIZE - 0.5F + OVERLAY_OFFSET_X_PIXELS) * pixelWidth + halfWidth;
-            float top = maxY - (0.5F + OVERLAY_OFFSET_Y_PIXELS) * pixelHeight + halfHeight;
-            float bottom = maxY - (DiscData.DESIGN_SIZE - 0.5F + OVERLAY_OFFSET_Y_PIXELS) * pixelHeight - halfHeight;
+        private FaceBounds expandedForOverlay(DiscData.DesignData design) {
+            PlacementProfile placement = placementFor(design);
+            float pixelWidth = width() / design.width();
+            float pixelHeight = height() / design.height();
+            float halfWidth = pixelWidth * placement.pixelScale() * 0.5F;
+            float halfHeight = pixelHeight * placement.pixelScale() * 0.5F;
+            float left = minX + (0.5F + placement.offsetXPixels()) * pixelWidth - halfWidth;
+            float right = minX + (design.width() - 0.5F + placement.offsetXPixels()) * pixelWidth + halfWidth;
+            float top = maxY - (0.5F + placement.offsetYPixels()) * pixelHeight + halfHeight;
+            float bottom = maxY - (design.height() - 0.5F + placement.offsetYPixels()) * pixelHeight - halfHeight;
             return new FaceBounds(left, bottom, z, right, top);
         }
     }
 
+    private static PlacementProfile placementFor(DiscData.DesignData design) {
+        return switch (design.width()) {
+            case 16 -> PROFILE_16;
+            case 32 -> PROFILE_32;
+            case 64 -> PROFILE_64;
+            case 128 -> PROFILE_128;
+            default -> PROFILE_16;
+        };
+    }
+
     private record CachedDesign(List<BakedQuad> quads, int[] tints, Vector3fc[] extents, Material.Baked material) {
+    }
+
+    private record PlacementProfile(float pixelScale, float offsetXPixels, float offsetYPixels) {
     }
 }
