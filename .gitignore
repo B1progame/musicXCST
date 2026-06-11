@@ -56,3 +56,7 @@ replay_pid*
 # Programmer
 Promts.md
 AGENTS.md
+
+# Local fake-platform runClient helpers
+tools/run-client-fake-*.ps1
+tools/run-client-fake-*.sh

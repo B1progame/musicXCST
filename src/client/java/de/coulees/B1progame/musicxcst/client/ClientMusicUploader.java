@@ -1,6 +1,7 @@
 package de.coulees.B1progame.musicxcst.client;
 
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.chat.ChatFeedback;
 import de.coulees.B1progame.musicxcst.client.screen.FfmpegSetupScreen;
 import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
 import de.coulees.B1progame.musicxcst.media.AudioValidation;
@@ -45,7 +46,7 @@ public final class ClientMusicUploader {
         try {
             AUDIO_VALIDATION.validateClientInput(path, config);
         } catch (IllegalArgumentException exception) {
-            sendClientMessage(client, Component.literal(exception.getMessage()));
+            sendClientMessage(client, ChatFeedback.error(exception.getMessage()));
             return 0;
         }
 
@@ -58,7 +59,7 @@ public final class ClientMusicUploader {
         Thread uploadThread = new Thread(() -> transcodeAndUploadFile(client, name, path, config, afterUpload, progress), "musicxcst-client-upload");
         uploadThread.setDaemon(true);
         uploadThread.start();
-        sendClientMessage(client, Component.literal("Started music conversion/upload. Keep the server connection open."));
+        sendClientMessage(client, ChatFeedback.info("Started music conversion/upload. Keep the server connection open."));
         return 1;
     }
 
@@ -80,7 +81,7 @@ public final class ClientMusicUploader {
                 client.execute(() -> progress.accept("Converting audio..."));
             }
             TranscodeResult result = MEDIA_TRANSCODER.transcodeToOgg(ffmpeg, path, transcoded, config, message -> client.execute(() -> {
-                client.gui.setOverlayMessage(Component.literal(message), false);
+                client.gui.setOverlayMessage(ChatFeedback.progress(message), false);
                 if (progress != null) {
                     progress.accept(message);
                 }
@@ -88,7 +89,7 @@ public final class ClientMusicUploader {
             uploadFile(client, name, result.output(), path.getFileName().toString(), afterUpload, progress);
         } catch (IllegalArgumentException exception) {
             Musicxcst.LOGGER.warn("Failed to transcode music file '{}': {}", path.getFileName(), exception.getMessage());
-            sendClientMessage(client, Component.literal("Failed to convert audio: " + exception.getMessage()));
+            sendClientMessage(client, ChatFeedback.error("Failed to convert audio: " + exception.getMessage()));
             if (progress != null) {
                 client.execute(() -> progress.accept(""));
             }
@@ -134,7 +135,7 @@ public final class ClientMusicUploader {
                     Thread.sleep(250L);
                 }
             }
-            sendClientMessage(client, Component.literal("Music upload finished. The server is processing it."));
+            sendClientMessage(client, ChatFeedback.success("Music upload finished. The server is processing it."));
             if (progress != null) {
                 client.execute(() -> progress.accept("Processing on server..."));
             }
@@ -143,10 +144,10 @@ public final class ClientMusicUploader {
             }
         } catch (IOException exception) {
             Musicxcst.LOGGER.warn("Failed to upload music file '{}': {}", path.getFileName(), exception.getMessage());
-            sendClientMessage(client, Component.literal("Failed to read music file: " + exception.getMessage()));
+            sendClientMessage(client, ChatFeedback.error("Failed to read music file: " + exception.getMessage()));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            sendClientMessage(client, Component.literal("Music upload was interrupted."));
+            sendClientMessage(client, ChatFeedback.warning("Music upload was interrupted."));
         }
     }
 
@@ -195,9 +196,10 @@ public final class ClientMusicUploader {
         long elapsedMillis = Math.max(1L, System.currentTimeMillis() - startedAtMillis);
         double bytesPerMillis = uploadedBytes / (double) elapsedMillis;
         long remainingMillis = bytesPerMillis <= 0.0D ? 0L : (long) ((sizeBytes - uploadedBytes) / bytesPerMillis);
-        String message = "Upload " + String.format(java.util.Locale.ROOT, "%.1f", percent) + "%, ETA " + formatEta(remainingMillis);
+        String eta = formatEta(remainingMillis);
+        String message = "Upload " + String.format(java.util.Locale.ROOT, "%.1f", percent) + "%, ETA " + eta;
         client.execute(() -> {
-            client.gui.setOverlayMessage(Component.literal(message), false);
+            client.gui.setOverlayMessage(ChatFeedback.actionBarProgress("Upload", percent, eta), false);
             if (progress != null) {
                 progress.accept(message);
             }

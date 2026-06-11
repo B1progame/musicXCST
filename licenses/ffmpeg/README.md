@@ -22,7 +22,9 @@ Managed setup:
 
 Current managed source:
 
-- Windows x86_64: BtbN FFmpeg `n8.1` LGPL build, `ffmpeg-n8.1-latest-win64-lgpl-8.1.zip`
+- Windows x86_64: BtbN FFmpeg LGPL `win64` ZIP build selected from the latest GitHub release.
+- Linux x86_64: BtbN FFmpeg LGPL `linux64` TAR.XZ build selected from the latest GitHub release.
+- Linux aarch64: BtbN FFmpeg LGPL `linuxarm64` TAR.XZ build selected from the latest GitHub release.
 - SHA-256: `8d68576f84043b3e2027ed020de9f814e39795007c64061bf40310e0d3f7fee6`
 
 For unsupported managed platforms, install FFmpeg manually and use:

@@ -7,6 +7,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.chat.ChatFeedback;
 import de.coulees.B1progame.musicxcst.data.DiscData;
 import de.coulees.B1progame.musicxcst.data.MusicEntry;
 import de.coulees.B1progame.musicxcst.data.MusicStatus;
@@ -40,17 +41,17 @@ public final class CstMusicCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext context, Commands.CommandSelection environment) {
         dispatcher.register(Commands.literal("cstmusic")
-                .executes(ctx -> help(ctx.getSource()))
-                .then(Commands.literal("help").executes(ctx -> help(ctx.getSource())))
+                .executes(ctx -> runCommand(ctx.getSource(), () -> help(ctx.getSource())))
+                .then(Commands.literal("help").executes(ctx -> runCommand(ctx.getSource(), () -> help(ctx.getSource()))))
                 .then(Commands.literal("create")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .then(Commands.argument("colorAndLocation", StringArgumentType.greedyString())
-                                        .executes(ctx -> create(
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> create(
                                                 ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "colorAndLocation")
-                                        )))))
+                                        ))))))
                 .then(Commands.literal("createupload")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
@@ -58,110 +59,110 @@ public final class CstMusicCommands {
                                         .suggests(CstMusicCommands::suggestHexColors)
                                         .then(Commands.argument("uploadedFile", StringArgumentType.string())
                                                 .suggests(CstMusicCommands::suggestUploadedFiles)
-                                                .executes(ctx -> createFromUpload(
+                                                .executes(ctx -> runCommand(ctx.getSource(), () -> createFromUpload(
                                                         ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "name"),
                                                         StringArgumentType.getString(ctx, "hexColor"),
                                                         StringArgumentType.getString(ctx, "uploadedFile")
-                                                ))))))
+                                                )))))))
                 .then(Commands.literal("upload")
                         .requires(CstMusicCommands::isAdmin)
                         .then(Commands.argument("name", StringArgumentType.string())
                                 .then(Commands.argument("path", StringArgumentType.greedyString())
-                                        .executes(ctx -> uploadFromClientPath(
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> uploadFromClientPath(
                                                 ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "path")
-                                        )))))
+                                        ))))))
                 .then(Commands.literal("list")
-                        .executes(ctx -> listOwn(ctx.getSource(), false)))
+                        .executes(ctx -> runCommand(ctx.getSource(), () -> listOwn(ctx.getSource(), false))))
                 .then(Commands.literal("info")
-                        .executes(ctx -> infoUsage(ctx.getSource()))
+                        .executes(ctx -> runCommand(ctx.getSource(), () -> infoUsage(ctx.getSource())))
                         .then(Commands.argument("musicRef", StringArgumentType.string())
                                 .suggests(CstMusicCommands::suggestOwnMusicReferences)
-                                .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false))))
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false)))))
                 .then(Commands.literal("delete")
-                        .executes(ctx -> deleteUsage(ctx.getSource()))
+                        .executes(ctx -> runCommand(ctx.getSource(), () -> deleteUsage(ctx.getSource())))
                         .then(Commands.argument("musicRef", StringArgumentType.string())
                                 .suggests(CstMusicCommands::suggestOwnMusicReferences)
-                                .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false))))
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicRef"), false)))))
                 .then(Commands.literal("storage")
-                        .executes(ctx -> storage(ctx.getSource())))
+                        .executes(ctx -> runCommand(ctx.getSource(), () -> storage(ctx.getSource()))))
                 .then(Commands.literal("download")
                         .then(Commands.literal("all")
-                                .executes(ctx -> downloadAll(ctx.getSource())))
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> downloadAll(ctx.getSource()))))
                         .then(Commands.literal("auto")
                                 .then(Commands.literal("30m")
-                                        .executes(ctx -> downloadAuto(ctx.getSource(), 30)))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> downloadAuto(ctx.getSource(), 30))))
                                 .then(Commands.literal("1h")
-                                        .executes(ctx -> downloadAuto(ctx.getSource(), 60)))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> downloadAuto(ctx.getSource(), 60))))
                                 .then(Commands.literal("1h30m")
-                                        .executes(ctx -> downloadAuto(ctx.getSource(), 90))))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> downloadAuto(ctx.getSource(), 90)))))
                         .then(Commands.literal("off")
-                                .executes(ctx -> downloadOff(ctx.getSource()))))
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> downloadOff(ctx.getSource())))))
                 .then(Commands.literal("admin")
                         .requires(CstMusicCommands::isAdmin)
-                        .then(Commands.literal("storage").executes(ctx -> adminStorage(ctx.getSource())))
+                        .then(Commands.literal("storage").executes(ctx -> runCommand(ctx.getSource(), () -> adminStorage(ctx.getSource()))))
                         .then(Commands.literal("ffmpeg")
-                                .then(Commands.literal("status").executes(ctx -> ffmpegStatus(ctx.getSource())))
+                                .then(Commands.literal("status").executes(ctx -> runCommand(ctx.getSource(), () -> ffmpegStatus(ctx.getSource()))))
                                 .then(Commands.literal("path")
                                         .then(Commands.argument("path", StringArgumentType.greedyString())
-                                                .executes(ctx -> ffmpegPath(ctx.getSource(), StringArgumentType.getString(ctx, "path")))))
+                                                .executes(ctx -> runCommand(ctx.getSource(), () -> ffmpegPath(ctx.getSource(), StringArgumentType.getString(ctx, "path"))))))
                                 .then(Commands.literal("download")
-                                        .then(Commands.literal("confirm").executes(ctx -> ffmpegDownloadConfirm(ctx.getSource()))))
-                                .then(Commands.literal("reset").executes(ctx -> ffmpegReset(ctx.getSource()))))
+                                        .then(Commands.literal("confirm").executes(ctx -> runCommand(ctx.getSource(), () -> ffmpegDownloadConfirm(ctx.getSource())))))
+                                .then(Commands.literal("reset").executes(ctx -> runCommand(ctx.getSource(), () -> ffmpegReset(ctx.getSource())))))
                         .then(Commands.literal("list")
-                                .executes(ctx -> adminList(ctx.getSource(), 1))
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> adminList(ctx.getSource(), 1)))
                                 .then(Commands.argument("page", IntegerArgumentType.integer(1))
-                                        .executes(ctx -> adminList(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "page")))))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> adminList(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "page"))))))
                         .then(Commands.literal("info")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
                                         .suggests(CstMusicCommands::suggestAllMusicIds)
-                                        .executes(ctx -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true))))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> info(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true)))))
                         .then(Commands.literal("delete")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
                                         .suggests(CstMusicCommands::suggestAllMusicIds)
-                                        .executes(ctx -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true))))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> delete(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"), true)))))
                         .then(Commands.literal("play")
                                 .then(Commands.argument("musicId", StringArgumentType.word())
                                         .suggests(CstMusicCommands::suggestAllMusicIds)
-                                        .executes(ctx -> adminPlay(ctx.getSource(), StringArgumentType.getString(ctx, "musicId")))))
+                                        .executes(ctx -> runCommand(ctx.getSource(), () -> adminPlay(ctx.getSource(), StringArgumentType.getString(ctx, "musicId"))))))
                         .then(Commands.literal("debugdisc")
-                                .executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants"))
-                                .then(Commands.literal("checkerboard").executes(ctx -> giveDebugDisc(ctx.getSource(), "checkerboard")))
-                                .then(Commands.literal("quadrants").executes(ctx -> giveDebugDisc(ctx.getSource(), "quadrants")))
-                                .then(Commands.literal("red").executes(ctx -> giveDebugDisc(ctx.getSource(), "red")))
-                                .then(Commands.literal("green").executes(ctx -> giveDebugDisc(ctx.getSource(), "green")))
-                                .then(Commands.literal("blue").executes(ctx -> giveDebugDisc(ctx.getSource(), "blue")))
-                                .then(Commands.literal("transparent-center").executes(ctx -> giveDebugDisc(ctx.getSource(), "transparent-center")))
-                                .then(Commands.literal("invalid").executes(ctx -> giveDebugDisc(ctx.getSource(), "invalid"))))
-                        .then(Commands.literal("reload").executes(ctx -> reload(ctx.getSource())))
-                        .then(Commands.literal("repairindex").executes(ctx -> repairIndex(ctx.getSource())))));
+                                .executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "quadrants")))
+                                .then(Commands.literal("checkerboard").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "checkerboard"))))
+                                .then(Commands.literal("quadrants").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "quadrants"))))
+                                .then(Commands.literal("red").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "red"))))
+                                .then(Commands.literal("green").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "green"))))
+                                .then(Commands.literal("blue").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "blue"))))
+                                .then(Commands.literal("transparent-center").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "transparent-center"))))
+                                .then(Commands.literal("invalid").executes(ctx -> runCommand(ctx.getSource(), () -> giveDebugDisc(ctx.getSource(), "invalid")))))
+                        .then(Commands.literal("reload").executes(ctx -> runCommand(ctx.getSource(), () -> reload(ctx.getSource()))))
+                        .then(Commands.literal("repairindex").executes(ctx -> runCommand(ctx.getSource(), () -> repairIndex(ctx.getSource()))))));
     }
 
     private static int help(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal("musicXCST guide").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), false);
-        source.sendSuccess(() -> Component.literal("CD Writer block workflow:").withStyle(ChatFormatting.GRAY), false);
-        source.sendSuccess(() -> Component.literal("  1. Place a blank Blueprint CD in the CD Writer input slot.").withStyle(ChatFormatting.AQUA), false);
-        source.sendSuccess(() -> Component.literal("  2. Enter a disc name, choose a local file with the folder button, and edit the disc color/texture.").withStyle(ChatFormatting.AQUA), false);
-        source.sendSuccess(() -> Component.literal("  3. Press Print and keep the GUI/server connection open until conversion finishes.").withStyle(ChatFormatting.AQUA), false);
-        source.sendSuccess(() -> Component.literal("  Supported files: mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi.").withStyle(ChatFormatting.YELLOW), false);
-        source.sendSuccess(() -> Component.literal("Manage your music:").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> heading("musicXCST guide", ChatFormatting.GOLD), false);
+        source.sendSuccess(() -> heading("CD Writer block workflow:", ChatFormatting.DARK_AQUA), false);
+        source.sendSuccess(() -> numberedStep("1.", "Place a blank Blueprint CD in the CD Writer input slot."), false);
+        source.sendSuccess(() -> numberedStep("2.", "Enter a disc name, choose a local file with the folder button, and edit the disc color/texture."), false);
+        source.sendSuccess(() -> numberedStep("3.", "Press Print and keep the GUI/server connection open until conversion finishes."), false);
+        source.sendSuccess(() -> tipLine("Supported files: ", "mp3, mp4, wav, ogg, flac, m4a, aac, webm, avi."), false);
+        source.sendSuccess(() -> heading("Manage your music:", ChatFormatting.DARK_AQUA), false);
         sendCommandHelp(source, "/cstmusic list", "Show your available uploaded music names.");
         sendCommandHelp(source, "/cstmusic info <uploadedFile>", "Show status, owner, file size, checksum, and color.");
         sendCommandHelp(source, "/cstmusic delete <uploadedFile>", "Delete one of your music entries.");
         sendCommandHelp(source, "/cstmusic storage", "Show your storage usage and server storage if you are admin.");
-        source.sendSuccess(() -> Component.literal("Avoid playback gaps by pre-downloading full audio:").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> heading("Avoid playback gaps by pre-downloading full audio:", ChatFormatting.DARK_AQUA), false);
         sendCommandHelp(source, "/cstmusic download all", "Download all active Blueprint CD audio to your local cache now.");
         sendCommandHelp(source, "/cstmusic download auto 30m", "Automatically refresh your local cache every 30 minutes.");
         sendCommandHelp(source, "/cstmusic download off", "Disable automatic cache refresh.");
-        source.sendSuccess(() -> Component.literal("Tips: use Download All before long sessions; previews play while full audio downloads.").withStyle(ChatFormatting.YELLOW), false);
+        source.sendSuccess(() -> tipLine("Tips: ", "use Download All before long sessions; previews play while full audio downloads."), false);
         if (isAdmin(source)) {
-            source.sendSuccess(() -> Component.literal("Admin creation commands:").withStyle(ChatFormatting.RED), false);
+            source.sendSuccess(() -> heading("Admin creation commands:", ChatFormatting.DARK_RED), false);
             sendCommandHelp(source, "/cstmusic upload \"Song Name\" \"C:\\Music\\song.mp3\"", "Admin-only client upload command.");
             sendCommandHelp(source, "/cstmusic createupload \"Disc Name\" #00AAFF \"song.mp3\"", "Admin-only command for writing an uploaded file to a held Blueprint CD.");
             sendCommandHelp(source, "/cstmusic create \"Disc Name\" #00AAFF \"music-import/song.mp3\"", "Admin-only server-side import command.");
-            source.sendSuccess(() -> Component.literal("Admin tools:").withStyle(ChatFormatting.RED), false);
+            source.sendSuccess(() -> heading("Admin tools:", ChatFormatting.DARK_RED), false);
             sendCommandHelp(source, "/cstmusic admin storage", "Show detailed server storage usage.");
             sendCommandHelp(source, "/cstmusic admin list 1", "List all music entries by page.");
             sendCommandHelp(source, "/cstmusic admin info <musicId>", "Inspect any music entry.");
@@ -180,15 +181,17 @@ public final class CstMusicCommands {
 
     private static void sendCommandHelp(CommandSourceStack source, String command, String tip) {
         source.sendSuccess(() -> Component.literal("  ")
-                .append(Component.literal(command).withStyle(style -> style
-                        .withColor(ChatFormatting.AQUA)
+                .append(Component.literal("• ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(ChatFeedback.command(command).withStyle(style -> style
                         .withClickEvent(new ClickEvent.SuggestCommand(command))
-                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(tip))))), false);
+                        .withHoverEvent(new HoverEvent.ShowText(ChatFeedback.info(tip)))))
+                .append(Component.literal(" - ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(ChatFeedback.detail(tip)), false);
     }
 
     private static Component field(String label, String value, ChatFormatting valueColor) {
-        return Component.literal(label + ": ").withStyle(ChatFormatting.GRAY)
-                .append(Component.literal(value).withStyle(valueColor));
+        return ChatFeedback.fieldLabel(label + ": ")
+                .append(ChatFeedback.fieldValue(value, valueColor));
     }
 
     private static Component entryLine(String primary, String discName, String status) {
@@ -241,7 +244,7 @@ public final class CstMusicCommands {
         ServerPlayNetworking.send(player, new ClientMusicUploadRequestPayload(name, path));
         source.sendSuccess(() -> Component.literal("Starting client upload for '").withStyle(ChatFormatting.YELLOW)
                 .append(Component.literal(name).withStyle(ChatFormatting.GOLD))
-                .append(Component.literal("'.")), false);
+                .append(Component.literal("'.").withStyle(ChatFormatting.YELLOW)), false);
         return 1;
     }
 
@@ -347,21 +350,21 @@ public final class CstMusicCommands {
     private static int downloadAll(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.warmPlayerCache(player);
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> ChatFeedback.status(result), false);
         return 1;
     }
 
     private static int downloadAuto(CommandSourceStack source, int intervalMinutes) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.setPlayerAutoDownload(player, intervalMinutes);
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> ChatFeedback.status(result), false);
         return 1;
     }
 
     private static int downloadOff(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.disablePlayerAutoDownload(player);
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> ChatFeedback.status(result), false);
         return 1;
     }
 
@@ -401,22 +404,22 @@ public final class CstMusicCommands {
     }
 
     private static int reload(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.reload()), true);
+        source.sendSuccess(() -> ChatFeedback.status(Musicxcst.LIBRARY.reload()), true);
         return 1;
     }
 
     private static int repairIndex(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.repairIndex()), true);
+        source.sendSuccess(() -> ChatFeedback.status(Musicxcst.LIBRARY.repairIndex()), true);
         return 1;
     }
 
     private static int ffmpegStatus(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.ffmpegStatus()), false);
+        source.sendSuccess(() -> ChatFeedback.status(Musicxcst.LIBRARY.ffmpegStatus()), false);
         return 1;
     }
 
     private static int ffmpegPath(CommandSourceStack source, String path) {
-        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.setFfmpegPath(path)), true);
+        source.sendSuccess(() -> ChatFeedback.status(Musicxcst.LIBRARY.setFfmpegPath(path)), true);
         return 1;
     }
 
@@ -426,14 +429,14 @@ public final class CstMusicCommands {
     }
 
     private static int ffmpegReset(CommandSourceStack source) {
-        source.sendSuccess(() -> Component.literal(Musicxcst.LIBRARY.resetManagedFfmpeg()), true);
+        source.sendSuccess(() -> ChatFeedback.status(Musicxcst.LIBRARY.resetManagedFfmpeg()), true);
         return 1;
     }
 
     private static int adminPlay(CommandSourceStack source, String musicId) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String result = Musicxcst.LIBRARY.playEntryForAdmin(source, player, musicId);
-        source.sendSuccess(() -> Component.literal(result), false);
+        source.sendSuccess(() -> ChatFeedback.status(result), false);
         return 1;
     }
 
@@ -471,7 +474,7 @@ public final class CstMusicCommands {
         if (!player.getInventory().add(stack)) {
             player.drop(stack, false);
         }
-        source.sendSuccess(() -> Component.literal("Created debug Blueprint CD " + pattern + " with " + DiscData.designDebugSummary(data.designPixels)), false);
+        source.sendSuccess(() -> ChatFeedback.success("Created debug Blueprint CD " + pattern + " with " + DiscData.designDebugSummary(data.designPixels)), false);
         return 1;
     }
 
@@ -616,6 +619,37 @@ public final class CstMusicCommands {
         return uploaded + " / " + entry.displayName;
     }
 
+    private static int runCommand(CommandSourceStack source, CommandAction action) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        try {
+            return action.run();
+        } catch (IllegalArgumentException exception) {
+            source.sendFailure(ChatFeedback.error(exception.getMessage()));
+            return 0;
+        }
+    }
+
+    private static Component heading(String text, ChatFormatting accent) {
+        return Component.literal("◆ ").withStyle(accent, ChatFormatting.BOLD)
+                .append(Component.literal(text).withStyle(accent, ChatFormatting.BOLD));
+    }
+
+    private static Component numberedStep(String number, String text) {
+        return Component.literal("  ")
+                .append(Component.literal(number + " ").withStyle(ChatFormatting.LIGHT_PURPLE, ChatFormatting.BOLD))
+                .append(Component.literal(text).withStyle(ChatFormatting.AQUA));
+    }
+
+    private static Component tipLine(String label, String detail) {
+        return Component.literal("  ")
+                .append(Component.literal(label).withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD))
+                .append(Component.literal(detail).withStyle(ChatFormatting.GOLD));
+    }
+
     private record CreateArguments(String hexColor, String location) {
+    }
+
+    @FunctionalInterface
+    private interface CommandAction {
+        int run() throws com.mojang.brigadier.exceptions.CommandSyntaxException;
     }
 }

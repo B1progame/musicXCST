@@ -64,7 +64,7 @@ Admin FFmpeg commands:
 /cstmusic admin ffmpeg reset
 ```
 
-Dedicated servers never open FFmpeg setup screens and never download FFmpeg automatically. Managed download only starts after `/cstmusic admin ffmpeg download confirm`. If the current platform has no pinned managed source, install FFmpeg manually and use `system` or `path`.
+Dedicated servers never open FFmpeg setup screens and never download FFmpeg automatically. Managed download only starts after `/cstmusic admin ffmpeg download confirm`. Managed download supports Windows x86_64 and Linux x86_64/aarch64. If the current platform has no managed source, install FFmpeg manually and use `system` or `path`.
 
 ## Storage
 

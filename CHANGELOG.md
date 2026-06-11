@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.7
+
+Release for Minecraft `26.1.2` on Fabric.
+
+### Added
+
+- Added colorful command help formatting so `/cstmusic help` and the admin help entries are easier to scan in chat without changing the command wording.
+
+### Changed
+
+- Styled more command output, warnings, and status updates through the shared chat feedback formatter, including upload start/finish messages and FFmpeg/admin status feedback.
+- Upload actionbar progress now highlights the percentage and ETA with richer colors while keeping the existing wording.
+- Added local fake-platform `runClient` helper scripts to `.gitignore`.
+
+### Fixed
+
+- Command errors triggered from `/cstmusic` subcommands now route through MusicXCST's styled error output instead of falling back to plainer raw exception text.
+
 ## 0.1.6
 
 Release for Minecraft `26.1.2` on Fabric.

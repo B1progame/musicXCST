@@ -59,7 +59,7 @@ Server managed files are stored under the server directory at the same relative 
 
 On the Minecraft title screen, the client shows a top-right MusicXCST banner when MusicXCST does not have its own managed FFmpeg installed, even if system FFmpeg exists on PATH. Click the banner to open setup. The setup screen also appears when a non-OGG file needs conversion and FFmpeg is missing. It offers **Download FFmpeg**, **Use system FFmpeg**, **Choose FFmpeg path**, **Use OGG only**, and **Cancel**. No executable is downloaded unless the user clicks **Download FFmpeg**.
 
-Managed download currently supports Windows x86_64 using the BtbN LGPL FFmpeg 8.1 build pinned by SHA-256. Other platforms should install FFmpeg manually and use `system` or `path`.
+Managed download currently supports Windows x86_64 and Linux x86_64/aarch64 using BtbN LGPL FFmpeg builds verified against the checksum published with the selected release. Other platforms should install FFmpeg manually and use `system` or `path`.
 
 ## Installation
 
@@ -218,7 +218,7 @@ Managed download rules:
 
 - HTTPS only.
 - Exact SHA-256 verification before extraction.
-- Extract only the expected `ffmpeg` executable.
+- Extract only the archive `bin/` folder needed by the selected `ffmpeg` executable.
 - Reject builds reporting `--enable-nonfree`.
 - Save source URL, version, SHA-256, and license metadata in the managed folder.
 - Never run downloaded FFmpeg until the archive hash has passed.

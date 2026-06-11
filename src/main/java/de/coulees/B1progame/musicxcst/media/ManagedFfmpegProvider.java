@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
 import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
+import org.tukaani.xz.XZInputStream;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,9 +34,6 @@ import java.util.zip.ZipInputStream;
 
 public final class ManagedFfmpegProvider {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-    private static final String WINDOWS_X86_64_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-lgpl-8.1.zip";
-    private static final String WINDOWS_X86_64_SHA256 = "8d68576f84043b3e2027ed020de9f814e39795007c64061bf40310e0d3f7fee6";
-    private static final String WINDOWS_X86_64_VERSION = "BtbN FFmpeg n8.1 latest win64 LGPL 8.1, GitHub release published 2026-06-04";
     private static final String LGPL_LICENSE = "LGPL build variant from BtbN/FFmpeg-Builds; do not use if ffmpeg -version reports --enable-nonfree.";
 
     public Optional<String> resolveInstalled(Path baseDirectory) {
@@ -83,8 +81,8 @@ public final class ManagedFfmpegProvider {
             downloadArchive(download, archive, progress);
             progress(progress, "Verifying FFmpeg download with SHA-256...");
             verifySha256(archive, download.sha256());
-            progress(progress, "Extracting FFmpeg executable from verified archive...");
-            Path executable = extractZip(download, archive, targetRoot, platform);
+            progress(progress, "Extracting FFmpeg files from verified archive...");
+            Path executable = extractArchive(download, archive, targetRoot, platform);
             executable.toFile().setReadable(true, true);
             executable.toFile().setExecutable(true, true);
             progress(progress, "Running ffmpeg -version and checking license flags...");
@@ -123,7 +121,7 @@ public final class ManagedFfmpegProvider {
     }
 
     private Optional<ManagedDownload> downloadFor(FfmpegPlatform platform) {
-        if (!"windows".equals(platform.os()) || !"x86_64".equals(platform.arch())) {
+        if (!"windows".equals(platform.os()) && !"linux".equals(platform.os())) {
             Musicxcst.LOGGER.warn("Managed FFmpeg is not available for platform: {} / {}", platform.os(), platform.arch());
             return Optional.empty();
         }
@@ -152,27 +150,7 @@ public final class ManagedFfmpegProvider {
                 }
                 Musicxcst.LOGGER.info("Found FFmpeg release: {}", release.tag_name);
                 
-                Asset selected = null;
-                for (Asset a : release.assets) {
-                    if (a == null || a.name == null || a.browser_download_url == null) continue;
-                    String name = a.name.toLowerCase(Locale.ROOT);
-                    if (name.contains("win64") && name.contains("lgpl") && name.endsWith(".zip") && !name.contains("gpl") && !name.contains("nonfree")) {
-                        selected = a;
-                        Musicxcst.LOGGER.info("Selected FFmpeg asset: {}", a.name);
-                        break;
-                    }
-                }
-                if (selected == null) {
-                    for (Asset a : release.assets) {
-                        if (a == null || a.name == null) continue;
-                        String name = a.name.toLowerCase(Locale.ROOT);
-                        if (name.contains("win64") && name.endsWith(".zip") && name.contains("lgpl")) {
-                            selected = a;
-                            Musicxcst.LOGGER.info("Selected FFmpeg asset (fallback): {}", a.name);
-                            break;
-                        }
-                    }
-                }
+                Asset selected = selectAsset(release.assets, platform);
                 if (selected == null) {
                     Musicxcst.LOGGER.warn("No suitable FFmpeg asset found in release {}", release.tag_name);
                     return Optional.empty();
@@ -230,6 +208,30 @@ public final class ManagedFfmpegProvider {
             Musicxcst.LOGGER.error("Failed to fetch FFmpeg release metadata", e);
             return Optional.empty();
         }
+    }
+
+    private Asset selectAsset(Asset[] assets, FfmpegPlatform platform) {
+        if (assets == null) {
+            return null;
+        }
+        for (Asset asset : assets) {
+            if (isSuitableAsset(asset, platform)) {
+                Musicxcst.LOGGER.info("Selected FFmpeg asset: {}", asset.name);
+                return asset;
+            }
+        }
+        return null;
+    }
+
+    private boolean isSuitableAsset(Asset asset, FfmpegPlatform platform) {
+        if (asset == null || asset.name == null || asset.browser_download_url == null) {
+            return false;
+        }
+        String name = asset.name.toLowerCase(Locale.ROOT);
+        return name.contains(platform.assetToken())
+                && name.contains("lgpl")
+                && name.endsWith(platform.archiveExtension())
+                && !name.contains("nonfree");
     }
 
     private Path installDirectory(Path baseDirectory, FfmpegPlatform platform) {
@@ -396,6 +398,16 @@ public final class ManagedFfmpegProvider {
         }
     }
 
+    private Path extractArchive(ManagedDownload download, Path archive, Path targetRoot, FfmpegPlatform platform) throws IOException {
+        if (download.archiveName().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+            return extractZip(download, archive, targetRoot, platform);
+        }
+        if (download.archiveName().toLowerCase(Locale.ROOT).endsWith(".tar.xz")) {
+            return extractTarXz(download, archive, targetRoot, platform);
+        }
+        throw new IOException("Unsupported managed FFmpeg archive type: " + download.archiveName());
+    }
+
     private Path extractZip(ManagedDownload download, Path archive, Path targetRoot, FfmpegPlatform platform) throws IOException {
         Path binDir = targetRoot.resolve("bin").normalize();
         if (!binDir.startsWith(targetRoot)) {
@@ -443,6 +455,160 @@ public final class ManagedFfmpegProvider {
         Path executable = binDir.resolve(platform.executableName()).normalize();
         Musicxcst.LOGGER.info("Extracted FFmpeg bin directory to: {}", binDir);
         return executable;
+    }
+
+    private Path extractTarXz(ManagedDownload download, Path archive, Path targetRoot, FfmpegPlatform platform) throws IOException {
+        Path binDir = targetRoot.resolve("bin").normalize();
+        if (!binDir.startsWith(targetRoot)) {
+            throw new IOException("Managed FFmpeg bin directory path escaped install root.");
+        }
+        Files.createDirectories(binDir);
+
+        Musicxcst.LOGGER.info("Extracting FFmpeg from {} to {}", archive, binDir);
+        boolean extracted = false;
+        try (InputStream input = new XZInputStream(Files.newInputStream(archive))) {
+            byte[] header = new byte[512];
+            while (readTarHeader(input, header)) {
+                if (isZeroBlock(header)) {
+                    break;
+                }
+
+                String entryName = tarString(header, 0, 100);
+                String prefix = tarString(header, 345, 155);
+                if (!prefix.isBlank()) {
+                    entryName = prefix + "/" + entryName;
+                }
+                entryName = entryName.replace('\\', '/');
+                long size = tarOctal(header, 124, 12);
+                int type = header[156] & 0xFF;
+                boolean directory = type == '5' || entryName.endsWith("/");
+                Path normalizedEntry = Path.of(entryName).normalize();
+
+                if (entryName.startsWith("/") || entryName.contains("..") || normalizedEntry.isAbsolute() || !entryName.contains("/bin/")) {
+                    skipTarEntry(input, size);
+                    continue;
+                }
+
+                String relativeBinPath = entryName.substring(entryName.indexOf("/bin/") + 5);
+                if (relativeBinPath.isEmpty()) {
+                    skipTarEntry(input, size);
+                    continue;
+                }
+
+                Path targetFile = binDir.resolve(relativeBinPath).normalize();
+                if (!targetFile.startsWith(binDir)) {
+                    Musicxcst.LOGGER.warn("Rejecting tar path escaping bin/: {}", entryName);
+                    skipTarEntry(input, size);
+                    continue;
+                }
+
+                if (directory) {
+                    Files.createDirectories(targetFile);
+                    skipTarEntry(input, size);
+                    continue;
+                }
+
+                Files.createDirectories(targetFile.getParent());
+                copyTarEntry(input, targetFile, size);
+                if (relativeBinPath.equals(platform.executableName())) {
+                    extracted = true;
+                    Musicxcst.LOGGER.info("Found FFmpeg executable: {}", entryName);
+                }
+            }
+        }
+        if (!extracted) {
+            throw new IOException("The FFmpeg archive did not contain the expected bin/" + platform.executableName() + " entry from " + download.url() + ".");
+        }
+
+        Path executable = binDir.resolve(platform.executableName()).normalize();
+        Musicxcst.LOGGER.info("Extracted FFmpeg bin directory to: {}", binDir);
+        return executable;
+    }
+
+    private boolean readTarHeader(InputStream input, byte[] header) throws IOException {
+        int offset = 0;
+        while (offset < header.length) {
+            int read = input.read(header, offset, header.length - offset);
+            if (read < 0) {
+                return offset != 0;
+            }
+            offset += read;
+        }
+        return true;
+    }
+
+    private boolean isZeroBlock(byte[] block) {
+        for (byte b : block) {
+            if (b != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String tarString(byte[] header, int offset, int length) {
+        int end = offset;
+        int max = offset + length;
+        while (end < max && header[end] != 0) {
+            end++;
+        }
+        return new String(header, offset, end - offset, StandardCharsets.UTF_8).trim();
+    }
+
+    private long tarOctal(byte[] header, int offset, int length) {
+        long value = 0L;
+        int end = offset + length;
+        for (int i = offset; i < end; i++) {
+            byte b = header[i];
+            if (b == 0 || b == ' ') {
+                continue;
+            }
+            if (b < '0' || b > '7') {
+                break;
+            }
+            value = (value << 3) + (b - '0');
+        }
+        return value;
+    }
+
+    private void copyTarEntry(InputStream input, Path targetFile, long size) throws IOException {
+        long remaining = size;
+        byte[] buffer = new byte[64 * 1024];
+        try (OutputStream output = Files.newOutputStream(targetFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING, java.nio.file.StandardOpenOption.WRITE)) {
+            while (remaining > 0L) {
+                int read = input.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                if (read < 0) {
+                    throw new IOException("Unexpected end of tar entry while extracting " + targetFile.getFileName() + ".");
+                }
+                output.write(buffer, 0, read);
+                remaining -= read;
+            }
+        }
+        skipPadding(input, size);
+    }
+
+    private void skipTarEntry(InputStream input, long size) throws IOException {
+        skipFully(input, size);
+        skipPadding(input, size);
+    }
+
+    private void skipPadding(InputStream input, long size) throws IOException {
+        long padding = (512L - (size % 512L)) % 512L;
+        skipFully(input, padding);
+    }
+
+    private void skipFully(InputStream input, long bytes) throws IOException {
+        long remaining = bytes;
+        while (remaining > 0L) {
+            long skipped = input.skip(remaining);
+            if (skipped <= 0L) {
+                if (input.read() < 0) {
+                    throw new IOException("Unexpected end of tar archive.");
+                }
+                skipped = 1L;
+            }
+            remaining -= skipped;
+        }
     }
 
     private VersionReport versionReport(Path executable) throws IOException {

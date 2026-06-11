@@ -33,6 +33,7 @@ repositories {
     // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html
     // for more information about repositories.
+    mavenCentral()
     maven {
         name = "CurseMaven"
         url = "https://www.cursemaven.com"
@@ -46,6 +47,7 @@ dependencies {
 
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     implementation "curse.maven:geckolib-388172:7913636"
+    include implementation("org.tukaani:xz:1.10")
 }
 
 processResources {
@@ -72,6 +74,17 @@ tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"
     if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
         it.options.release.set(targetJavaVersion)
+    }
+}
+
+tasks.withType(JavaExec).configureEach {
+    def fakeOsName = providers.gradleProperty("musicxcst.fakeOsName")
+    def fakeOsArch = providers.gradleProperty("musicxcst.fakeOsArch")
+    if (fakeOsName.present) {
+        jvmArgs "-Dmusicxcst.fakeOsName=${fakeOsName.get()}"
+    }
+    if (fakeOsArch.present) {
+        jvmArgs "-Dmusicxcst.fakeOsArch=${fakeOsArch.get()}"
     }
 }
 

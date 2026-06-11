@@ -3,6 +3,7 @@ package de.coulees.B1progame.musicxcst.service;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import de.coulees.B1progame.musicxcst.Musicxcst;
+import de.coulees.B1progame.musicxcst.chat.ChatFeedback;
 import de.coulees.B1progame.musicxcst.config.CstMusicConfig;
 import de.coulees.B1progame.musicxcst.data.DiscData;
 import de.coulees.B1progame.musicxcst.data.MusicEntry;
@@ -217,16 +218,16 @@ public final class MusicLibraryService {
                 message -> Musicxcst.LOGGER.info("Managed FFmpeg setup: {}", message),
                 (success, message) -> server.execute(() -> {
                     if (success) {
-                        source.sendSuccess(() -> Component.literal(message), true);
+                        source.sendSuccess(() -> ChatFeedback.success(message), true);
                     } else {
-                        source.sendFailure(Component.literal(message));
+                        source.sendFailure(ChatFeedback.error(message));
                     }
                 })
         );
         if (started) {
-            source.sendSuccess(() -> Component.literal("Starting managed FFmpeg download after explicit admin confirmation. This may take a while."), false);
+            source.sendSuccess(() -> ChatFeedback.progress("Starting managed FFmpeg download after explicit admin confirmation. This may take a while."), false);
         } else {
-            source.sendFailure(Component.literal("Managed FFmpeg setup is already running: " + managedFfmpegDownloadStatus));
+            source.sendFailure(ChatFeedback.warning("Managed FFmpeg setup is already running: " + managedFfmpegDownloadStatus));
         }
     }
 
@@ -299,7 +300,7 @@ public final class MusicLibraryService {
         if (ServerPlayNetworking.canSend(player, FfmpegSetupStatusPayload.TYPE)) {
             ServerPlayNetworking.send(player, new FfmpegSetupStatusPayload(message, done, success));
         } else {
-            player.sendSystemMessage(Component.literal(message));
+            player.sendSystemMessage(success ? ChatFeedback.success(message) : done ? ChatFeedback.error(message) : ChatFeedback.progress(message));
         }
     }
 
@@ -656,17 +657,17 @@ public final class MusicLibraryService {
         ensureServer();
         BlockPos pos = payload.pos().immutable();
         if (!(player.level().getBlockEntity(pos) instanceof CdWriterBlockEntity blockEntity) || player.blockPosition().distSqr(pos) > 64.0D) {
-            player.sendSystemMessage(Component.literal("CD Writer is no longer available."));
+            player.sendSystemMessage(ChatFeedback.error("CD Writer is no longer available."));
             finishCdWriterClient(player, pos);
             return;
         }
         try {
             if (!(player.containerMenu instanceof CdWriterMenu menu) || !menu.pos().equals(pos)) {
-                player.sendSystemMessage(Component.literal("Open the CD Writer before writing a disc."));
+                player.sendSystemMessage(ChatFeedback.warning("Open the CD Writer before writing a disc."));
                 return;
             }
             if (menu.hasOutput()) {
-                player.sendSystemMessage(Component.literal("Take the finished CD out of the CD Writer first."));
+                player.sendSystemMessage(ChatFeedback.warning("Take the finished CD out of the CD Writer first."));
                 return;
             }
             if (!skipPlayerFileLimit && !preparePlayerFileLimitForCdWriter(player, payload)) {
@@ -679,9 +680,9 @@ public final class MusicLibraryService {
             menu.moveInputToOutput();
             DiscData outputData = DiscData.fromStack(menu.getSlot(CdWriterMenu.OUTPUT_SLOT).getItem());
             Musicxcst.LOGGER.debug("CD Writer server output slot after move {}", outputData == null ? "missing disc data" : DiscData.designDebugSummary(outputData.designPixels));
-            player.sendSystemMessage(Component.literal(result));
+            player.sendSystemMessage(ChatFeedback.status(result));
         } catch (IllegalArgumentException exception) {
-            player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
+            player.sendSystemMessage(ChatFeedback.error("CD Writer error: " + exception.getMessage()));
         } finally {
             blockEntity.setConverting(false);
             if (player.containerMenu instanceof CdWriterMenu menu && menu.pos().equals(pos)) {
@@ -701,21 +702,21 @@ public final class MusicLibraryService {
         ensureServer();
         PendingLimitConfirmation pending = pendingLimitConfirmations.remove(player.getUUID());
         if (pending == null || !pending.payload().pos().equals(payload.pos())) {
-            player.sendSystemMessage(Component.literal("No pending music limit confirmation."));
+            player.sendSystemMessage(ChatFeedback.warning("No pending music limit confirmation."));
             return;
         }
         if (!payload.confirmed()) {
-            player.sendSystemMessage(Component.literal("Music upload cancelled."));
+            player.sendSystemMessage(ChatFeedback.warning("Music upload cancelled."));
             finishCdWriterClient(player, payload.pos());
             return;
         }
 
         try {
             deleteOldestOwnedEntryForLimit(player);
-            player.sendSystemMessage(Component.literal("Your oldest uploaded track was deleted to make space."));
+            player.sendSystemMessage(ChatFeedback.warning("Your oldest uploaded track was deleted to make space."));
             writeCdFromUploadedFile(player, pending.payload(), true);
         } catch (IllegalArgumentException exception) {
-            player.sendSystemMessage(Component.literal("CD Writer error: " + exception.getMessage()));
+            player.sendSystemMessage(ChatFeedback.error("CD Writer error: " + exception.getMessage()));
             finishCdWriterClient(player, payload.pos());
         }
     }
@@ -740,12 +741,12 @@ public final class MusicLibraryService {
         if (config.maxMusicFilesPerPlayerEnabled && isPlayerFileLimitReached(player)) {
             String mode = playerLimitMode();
             if ("block_new_upload".equals(mode)) {
-                player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Delete an old upload before creating a new one."));
+                player.sendSystemMessage(ChatFeedback.warning("You reached the limit of " + playerFileLimit() + " music files. Delete an old upload before creating a new one."));
                 return;
             }
             if ("auto_delete_oldest".equals(mode)) {
                 deleteOldestOwnedEntryForLimit(player);
-                player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+                player.sendSystemMessage(ChatFeedback.warning("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
             }
         }
         if (payload.sizeBytes() <= 0L || payload.sizeBytes() > config.maxFileSizeBytes) {
@@ -837,7 +838,7 @@ public final class MusicLibraryService {
                 }
             } catch (IOException ignored) {
             }
-            player.sendSystemMessage(Component.literal("Uploaded music file '" + updated.displayName() + "'. Use the CD Writer Print button to write it to a disc."));
+            player.sendSystemMessage(ChatFeedback.success("Uploaded music file '" + updated.displayName() + "'. Use the CD Writer Print button to write it to a disc."));
         } catch (IOException exception) {
             deleteQuietly(updated.tempPath());
             throw new IllegalArgumentException("Failed to finish music upload.", exception);
@@ -922,7 +923,7 @@ public final class MusicLibraryService {
 
         DiscData data = DiscData.fromStack(stack);
         if (data == null) {
-            player.sendOverlayMessage(Component.literal("Blank Blueprint CDs cannot be inserted into jukeboxes."));
+            player.sendOverlayMessage(ChatFeedback.warning("Blank Blueprint CDs cannot be inserted into jukeboxes."));
             return true;
         }
 
@@ -942,11 +943,11 @@ public final class MusicLibraryService {
             data.hexColor = "#C93A3A";
             data.displayName = entry == null ? data.displayName : entry.displayName;
             DiscData.writeToStack(stack, data);
-            player.sendOverlayMessage(Component.literal("This Blueprint CD is invalid and cannot be inserted."));
+            player.sendOverlayMessage(ChatFeedback.error("This Blueprint CD is invalid and cannot be inserted."));
             return true;
         }
 
-        player.sendOverlayMessage(Component.literal("This Blueprint CD is still converting. Try again when it is ready."));
+        player.sendOverlayMessage(ChatFeedback.progress("This Blueprint CD is still converting. Try again when it is ready."));
         return true;
     }
 
@@ -1615,7 +1616,7 @@ public final class MusicLibraryService {
         String mode = playerLimitMode();
         if ("auto_delete_oldest".equals(mode)) {
             deleteOldestOwnedEntryForLimit(player);
-            player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+            player.sendSystemMessage(ChatFeedback.warning("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
             return;
         }
         if ("block_new_upload".equals(mode)) {
@@ -1632,7 +1633,7 @@ public final class MusicLibraryService {
         String mode = playerLimitMode();
         if ("auto_delete_oldest".equals(mode)) {
             deleteOldestOwnedEntryForLimit(player);
-            player.sendSystemMessage(Component.literal("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
+            player.sendSystemMessage(ChatFeedback.warning("You reached the limit of " + playerFileLimit() + " music files. Your oldest uploaded track was deleted to make space."));
             return true;
         }
         if ("block_new_upload".equals(mode)) {
@@ -1643,7 +1644,7 @@ public final class MusicLibraryService {
         if (ServerPlayNetworking.canSend(player, MusicLimitConfirmPayload.TYPE)) {
             ServerPlayNetworking.send(player, new MusicLimitConfirmPayload(payload.pos(), playerFileLimit()));
         }
-        player.sendSystemMessage(Component.literal("You have reached the server limit of " + playerFileLimit() + " music files. Continuing will delete your oldest uploaded track."));
+        player.sendSystemMessage(ChatFeedback.warning("You have reached the server limit of " + playerFileLimit() + " music files. Continuing will delete your oldest uploaded track."));
         return false;
     }
 
@@ -1804,7 +1805,7 @@ public final class MusicLibraryService {
         try {
             Files.createDirectories(folder);
             if ("ogg".equals(extension(source.getFileName().toString()))) {
-                player.sendOverlayMessage(Component.literal("Blueprint CD audio is already ready."));
+                player.sendOverlayMessage(ChatFeedback.success("Blueprint CD audio is already ready."));
                 Files.copy(source, output, StandardCopyOption.REPLACE_EXISTING);
             } else {
                 if (!config.allowServerSideTranscoding) {
@@ -1848,8 +1849,8 @@ public final class MusicLibraryService {
             throw new IllegalArgumentException("Server-side transcoding is unavailable because FFmpeg is not installed. Convert the file to .ogg on the client or install/configure FFmpeg on the server.");
         }
         String ffmpeg = ffmpegOpt.get();
-        mediaTranscoder.transcodeToOgg(ffmpeg, source, output, config, message -> player.sendOverlayMessage(Component.literal(message)));
-        player.sendOverlayMessage(Component.literal("Blueprint CD audio is ready."));
+        mediaTranscoder.transcodeToOgg(ffmpeg, source, output, config, message -> player.sendOverlayMessage(ChatFeedback.progress(message)));
+        player.sendOverlayMessage(ChatFeedback.success("Blueprint CD audio is ready."));
     }
 
     private int estimatedConversionSeconds(long sourceSizeBytes) {
